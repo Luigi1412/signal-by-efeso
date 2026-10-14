@@ -1,0 +1,83 @@
+import type { CompanySignal } from "@/types";
+
+/** Demo data — synthetic and not validated. Chronological, newest first. */
+export const companySignals: CompanySignal[] = [
+  {
+    id: "sig-01",
+    companyId: "co-natura",
+    date: "2026-03-04",
+    periodLabel: "Março de 2026",
+    title: "Novo investimento industrial no Brasil anunciado",
+    summary:
+      "A empresa anunciou um programa de investimento para expandir e modernizar o complexo industrial de Cajamar, em São Paulo, com obras ao longo de 2026–2027.",
+    type: "verified",
+    category: "Manufacturing",
+    geography: "Brazil",
+    sourceIds: ["src-02", "src-04", "src-01"],
+    evidenceClaimId: "clm-01",
+    relatedOpportunityIds: ["opp-manufacturing"],
+  },
+  {
+    id: "sig-02",
+    companyId: "co-natura",
+    date: "2026-01-28",
+    periodLabel: "Janeiro de 2026",
+    title: "Gestão anuncia iniciativa de melhoria de margem",
+    summary:
+      "Uma iniciativa plurianual de margem bruta e eficiência de SG&A foi descrita a investidores, com a América Latina citada como região prioritária.",
+    type: "verified",
+    category: "Strategy",
+    geography: "Global",
+    brazilRelevance: "high",
+    sourceIds: ["src-03", "src-06"],
+    evidenceClaimId: "clm-05",
+    relatedOpportunityIds: ["opp-cost", "opp-manufacturing"],
+  },
+  {
+    id: "sig-03",
+    companyId: "co-natura",
+    date: "2025-12-31",
+    periodLabel: "Dezembro de 2025",
+    title: "Estoque cresceu materialmente mais rápido que as vendas",
+    summary:
+      "Os estoques consolidados cresceram 18% no ano, contra crescimento de receita de 6%, com base nas demonstrações financeiras de 2025.",
+    type: "derived",
+    category: "Financial Performance",
+    geography: "Global",
+    brazilRelevance: "medium",
+    sourceIds: ["src-07", "src-06"],
+    evidenceClaimId: "clm-02",
+    relatedOpportunityIds: ["opp-working-capital"],
+  },
+  {
+    id: "sig-04",
+    companyId: "co-natura",
+    date: "2025-11-18",
+    periodLabel: "Novembro de 2025",
+    title: "Papel de liderança de transformação criado no grupo",
+    summary:
+      "Foi nomeado um Chief Transformation Officer com mandato de operações e custo em todo o grupo.",
+    type: "verified",
+    category: "Organization",
+    geography: "Global",
+    brazilRelevance: "high",
+    sourceIds: ["src-12"],
+    evidenceClaimId: "clm-10",
+    relatedOpportunityIds: ["opp-cost", "opp-manufacturing"],
+  },
+  {
+    id: "sig-05",
+    companyId: "co-natura",
+    date: "2024-09-11",
+    periodLabel: "Setembro de 2024",
+    title: "Expansão de capacidade da ordem de 30% sinalizada",
+    summary:
+      "A imprensa citou representantes da empresa descrevendo uma expansão planejada de cerca de 30% na capacidade instalada. A linha de base é disputada entre as fontes.",
+    type: "verified",
+    category: "Manufacturing",
+    geography: "Brazil",
+    sourceIds: ["src-09", "src-02"],
+    evidenceClaimId: "clm-06",
+    relatedOpportunityIds: ["opp-manufacturing"],
+  },
+];

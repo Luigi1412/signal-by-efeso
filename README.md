@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SIGNAL by EFESO
 
-## Getting Started
+Inteligência de empresas baseada em evidências, para a EFESO Brasil.
 
-First, run the development server:
+Frontend prototype **v0.1.1** is frozen. This tree includes **v0.2 Sprint 1** — persistence foundation (PostgreSQL + Supabase Auth + RLS). The research engine, LLMs, and intelligence tables are not in this sprint.
+
+## Local setup
+
+Prerequisites: Node 20+ and **Docker Desktop** (or Podman) on `PATH`. The Supabase CLI cannot start the local stack without a container engine. Postgres.app alone is not enough — Signal needs Supabase Auth (`auth.users`) and RLS.
 
 ```bash
+cd signal
+cp .env.example .env.local
+npm install
+npm run supabase:start
+npm run supabase:reset
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Login CTA **Continuar com conta EFESO** (when `DEMO_AUTH_MODE=true`) creates a real Supabase Auth session for `mariana@efeso.demo` and bootstraps profile + EFESO Brazil membership.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Environment
 
-## Learn More
+See `.env.example`. Never expose `SUPABASE_SERVICE_ROLE_KEY` to the browser. Do not prefix it with `NEXT_PUBLIC_`.
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Where |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Browser + server |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser + server |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only (demo bootstrap) |
+| `DEMO_AUTH_MODE` | Server only |
+| `DEMO_AUTH_PASSWORD` | Server only |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Useful commands
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run supabase:start    # local API http://127.0.0.1:54321
+npm run supabase:stop
+npm run supabase:reset    # migrations + seed.sql
+npm run supabase:types    # regenerate src/types/database.ts
+npm run test:rls          # pgTAP cross-workspace smoke test
+npm run typecheck
+npm run lint
+npm run build
+```
 
-## Deploy on Vercel
+Studio (after `supabase:start`): [http://127.0.0.1:54323](http://127.0.0.1:54323)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+If Docker is not installed, `npm run supabase:start` fails. The Next.js UI still runs against mock intelligence, but analysis persistence and demo login require the local stack.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### RLS test
+
+Requires local Supabase to be running (`npm run supabase:start`). Then:
+
+```bash
+npm run test:rls
+```
+
+The test lives at `supabase/tests/rls_workspace_isolation.sql`. It creates a synthetic Workspace B inside a rolled-back transaction and asserts that User A (EFESO Brazil) cannot read it.
+
+## What is persisted vs mock
+
+Persisted: workspace, profile, membership, companies, analyses, research runs (including fake research progress).
+
+Still mock: Natura opportunities, evidence, signals, report, versions, capabilities, conflicts.
