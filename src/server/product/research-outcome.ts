@@ -55,7 +55,7 @@ export function researchOutcomeMemberCopy(outcome: ResearchOutcome): {
     case "signal_found":
       return {
         title: "Sinal identificado",
-        body: "Há pelo menos um movimento empresarial suficientemente sustentado pelas evidências disponíveis.",
+        body: "Foram identificados movimentos relevantes sustentados por evidências públicas.",
       };
     case "facts_only":
       return {

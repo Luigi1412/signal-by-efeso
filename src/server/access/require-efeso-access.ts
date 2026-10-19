@@ -4,13 +4,14 @@ import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { routes } from "@/lib/routes";
 import { recordAccessAudit } from "./audit";
+import { getAuthorizedEmail, markAuthorizedEmailActive } from "./authorized-emails";
 import { decideAccess } from "./decisions";
 import { getAllowedEmailDomains } from "./email-domains";
-import { getActiveEfesoMembership, provisionEfesoMembership } from "./membership";
+import { activateAuthorizedMembership, getActiveEfesoMembership } from "./membership";
 import { isAdminRole, type WorkspaceRole } from "./roles";
 
 export class AccessDeniedError extends Error {
-  constructor(public readonly reason: "unauthenticated" | "domain" | "forbidden" | "config") {
+  constructor(public readonly reason: "unauthenticated" | "domain" | "forbidden" | "config" | "not_authorized") {
     super("ACCESS_DENIED");
     this.name = "AccessDeniedError";
   }
@@ -23,6 +24,8 @@ export interface EfesoAccess {
   workspaceId: string;
   role: WorkspaceRole;
   isAdmin: boolean;
+  accountStatus: "active" | "invited";
+  loginProvider: string | null;
 }
 
 async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { deny: AccessDeniedError["reason"] }> {
@@ -36,12 +39,16 @@ async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { de
   }
   const allowedDomains = getAllowedEmailDomains();
   const membership = user ? await getActiveEfesoMembership(user.id) : null;
+  const authorization = user?.email ? await getAuthorizedEmail(user.email) : null;
 
   const decision = decideAccess({
     authenticated: Boolean(user),
     email: user?.email ?? null,
     allowedDomains,
     membershipRole: membership?.role ?? null,
+    authorization: authorization
+      ? { status: authorization.status, role: authorization.role }
+      : null,
   });
 
   if (decision.kind === "unauthenticated") {
@@ -67,20 +74,38 @@ async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { de
     });
     return { redirectTo: routes.accessRestricted };
   }
+  if (decision.kind === "not_authorized" || decision.kind === "disabled") {
+    await recordAccessAudit({
+      eventType: "email_not_authorized",
+      outcome: "denied",
+      actorUserId: user?.id ?? null,
+      emailDomain: decision.emailDomain,
+    });
+    return {
+      redirectTo:
+        decision.kind === "disabled"
+          ? `${routes.accessRestricted}?reason=disabled`
+          : `${routes.accessRestricted}?reason=not_authorized`,
+    };
+  }
 
   let role = decision.kind === "authorized" ? decision.role : null;
   let workspaceId = membership?.workspaceId ?? null;
-  if (decision.kind === "needs_provision" && user) {
+  let accountStatus: "active" | "invited" = "active";
+
+  if (decision.kind === "needs_activation" && user) {
     try {
       const metadataName =
         typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : undefined;
-      const provisioned = await provisionEfesoMembership({
+      const activated = await activateAuthorizedMembership({
         userId: user.id,
-        reason: "corporate_domain",
+        role: decision.role,
         fullName: metadataName || user.email?.split("@")[0]?.replace(/\./g, " "),
       });
-      role = provisioned.role;
-      workspaceId = provisioned.workspaceId;
+      await markAuthorizedEmailActive({ email: decision.email, userId: user.id });
+      role = activated.role;
+      workspaceId = activated.workspaceId;
+      accountStatus = "active";
     } catch {
       await recordAccessAudit({
         eventType: "authorization_failure",
@@ -92,7 +117,7 @@ async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { de
     }
   }
 
-  if (!user || !role || !workspaceId || !decision.emailDomain) {
+  if (!user || !role || !workspaceId || !("emailDomain" in decision) || !decision.emailDomain) {
     await recordAccessAudit({
       eventType: "authorization_failure",
       outcome: "denied",
@@ -101,6 +126,13 @@ async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { de
     return { redirectTo: routes.accessRestricted };
   }
 
+  const provider =
+    typeof user.app_metadata?.provider === "string"
+      ? user.app_metadata.provider
+      : Array.isArray(user.app_metadata?.providers) && typeof user.app_metadata.providers[0] === "string"
+        ? user.app_metadata.providers[0]
+        : null;
+
   return {
     userId: user.id,
     email: user.email?.trim().toLowerCase() ?? decision.email,
@@ -108,6 +140,8 @@ async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { de
     workspaceId,
     role,
     isAdmin: isAdminRole(role),
+    accountStatus,
+    loginProvider: provider,
   };
 }
 
@@ -139,6 +173,9 @@ export async function assertEfesoAccess(): Promise<EfesoAccess> {
     if (result.redirectTo.split("?")[0] === routes.login) throw new AccessDeniedError("unauthenticated");
     if (result.redirectTo.includes("reason=admin")) throw new AccessDeniedError("forbidden");
     if (result.redirectTo.includes("reason=config")) throw new AccessDeniedError("config");
+    if (result.redirectTo.includes("reason=not_authorized") || result.redirectTo.includes("reason=disabled")) {
+      throw new AccessDeniedError("not_authorized");
+    }
     throw new AccessDeniedError("domain");
   }
   if ("deny" in result) throw new AccessDeniedError(result.deny);
@@ -164,6 +201,9 @@ export function publicAccessErrorMessage(error: unknown): string {
   if (error instanceof AccessDeniedError) {
     if (error.reason === "unauthenticated") return "Entre com a sua conta EFESO para continuar.";
     if (error.reason === "forbidden") return "Você não tem permissão para esta ação.";
+    if (error.reason === "not_authorized") {
+      return "Seu email pertence à EFESO, mas ainda não possui acesso ao SIGNAL. Entre em contato com o administrador.";
+    }
     return "Acesso restrito a usuários autorizados da EFESO.";
   }
   return "Não foi possível autorizar esta ação.";

@@ -10,16 +10,18 @@ test("no auth is denied", () => {
     email: "user@efeso.com",
     allowedDomains: allowed,
     membershipRole: "member",
+    authorization: { status: "active", role: "member" },
   });
   assert.equal(decision.kind, "unauthenticated");
 });
 
-test("auth + allowed domain + membership is authorized", () => {
+test("auth + allowed domain + allowlist + membership is authorized", () => {
   const decision = decideAccess({
     authenticated: true,
     email: "demo.member@efeso.com",
     allowedDomains: allowed,
     membershipRole: "member",
+    authorization: { status: "active", role: "member" },
   });
   assert.equal(decision.kind, "authorized");
   if (decision.kind === "authorized") {
@@ -28,14 +30,41 @@ test("auth + allowed domain + membership is authorized", () => {
   }
 });
 
-test("auth + allowed domain + no membership needs provision", () => {
+test("auth + EFESO domain without allowlist is not_authorized", () => {
   const decision = decideAccess({
     authenticated: true,
-    email: "demo.member@efeso.com",
+    email: "desconhecido@efeso.com",
     allowedDomains: allowed,
     membershipRole: null,
+    authorization: null,
   });
-  assert.equal(decision.kind, "needs_provision");
+  assert.equal(decision.kind, "not_authorized");
+});
+
+test("auth + allowlist invited without membership needs activation", () => {
+  const decision = decideAccess({
+    authenticated: true,
+    email: "maria@efeso.com",
+    allowedDomains: allowed,
+    membershipRole: null,
+    authorization: { status: "invited", role: "member" },
+  });
+  assert.equal(decision.kind, "needs_activation");
+  if (decision.kind === "needs_activation") {
+    assert.equal(decision.role, "member");
+    assert.equal(decision.authorizationStatus, "invited");
+  }
+});
+
+test("disabled allowlist entry is denied", () => {
+  const decision = decideAccess({
+    authenticated: true,
+    email: "maria@efeso.com",
+    allowedDomains: allowed,
+    membershipRole: null,
+    authorization: { status: "disabled", role: "member" },
+  });
+  assert.equal(decision.kind, "disabled");
 });
 
 test("auth + blocked domain is denied and is not admin", () => {
@@ -44,6 +73,7 @@ test("auth + blocked domain is denied and is not admin", () => {
     email: "user@gmail.com",
     allowedDomains: allowed,
     membershipRole: "admin",
+    authorization: { status: "active", role: "admin" },
   });
   assert.equal(decision.kind, "domain_denied");
   assert.equal(canAccessAdminLabs(decision), false);
@@ -55,6 +85,7 @@ test("empty config fails closed", () => {
     email: "user@efeso.com",
     allowedDomains: [],
     membershipRole: "admin",
+    authorization: { status: "active", role: "admin" },
   });
   assert.equal(decision.kind, "config_missing");
 });
@@ -65,12 +96,14 @@ test("member cannot access admin labs", () => {
     email: "demo.member@efeso.com",
     allowedDomains: allowed,
     membershipRole: "member",
+    authorization: { status: "active", role: "member" },
   });
   const admin = decideAccess({
     authenticated: true,
     email: "demo.admin@efeso.com",
     allowedDomains: allowed,
     membershipRole: "admin",
+    authorization: { status: "active", role: "admin" },
   });
   assert.equal(canAccessAdminLabs(member), false);
   assert.equal(canAccessAdminLabs(admin), true);

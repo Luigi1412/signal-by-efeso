@@ -3,8 +3,8 @@
  * Usage:
  *   npm run user:provision -- --email someone@efeso.com --role member|admin
  *
+ * Adds the email to the SIGNAL allowlist (invited), then prefers Supabase invite.
  * Never prints passwords or tokens.
- * Prefers Supabase invite when service role is available.
  */
 import { createClient } from "@supabase/supabase-js";
 import { getAllowedEmailDomains, isAllowedCorporateEmail } from "../src/server/access/email-domains";
@@ -38,11 +38,14 @@ async function main() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !serviceKey) {
     console.error("Supabase admin credentials missing. Configure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
-    console.error("Manual procedure: invite the user in the Supabase Auth dashboard, then insert membership with role.");
+    console.error("Manual procedure: insert into workspace_authorized_emails, then invite in Supabase Auth.");
     process.exit(1);
   }
 
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+
+  await upsertAllowlist(admin, email, role);
+  console.log(`ok: allowlist invited (${email}, ${role})`);
 
   const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { signal_role: role },
@@ -51,14 +54,14 @@ async function main() {
   if (inviteError) {
     const { data: listed, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
     if (listError) {
-      console.error("provision failed (invite unavailable and listUsers failed)");
-      process.exit(1);
+      console.error("auth invite unavailable; allowlist row was still created");
+      process.exit(0);
     }
     const existing = listed.users.find((user) => user.email?.toLowerCase() === email);
     if (!existing) {
-      console.error("provision failed:", inviteError.message);
-      console.error("Use Supabase Auth invite in the dashboard, then assign membership/role.");
-      process.exit(1);
+      console.error("auth invite failed:", inviteError.message);
+      console.error("allowlist row exists — user can complete first access after Auth invite from dashboard");
+      process.exit(0);
     }
     await upsertMembership(admin, existing.id, role);
     console.log(`ok: membership ensured for existing user (${role})`);
@@ -67,11 +70,34 @@ async function main() {
 
   const userId = inviteData.user?.id;
   if (!userId) {
-    console.error("invite returned no user id");
-    process.exit(1);
+    console.error("invite returned no user id; allowlist row exists");
+    process.exit(0);
   }
   await upsertMembership(admin, userId, role);
   console.log(`ok: invite sent and membership set (${role})`);
+}
+
+async function upsertAllowlist(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  email: string,
+  role: string,
+) {
+  const { data: workspaces, error: wsError } = await admin.from("workspaces").select("id").eq("slug", "efeso-brazil").limit(1);
+  if (wsError || !workspaces?.[0]) {
+    throw new Error("workspace lookup failed");
+  }
+  const workspaceId = workspaces[0].id as string;
+  const { error } = await admin.from("workspace_authorized_emails").upsert(
+    {
+      workspace_id: workspaceId,
+      email,
+      role,
+      status: "invited",
+    },
+    { onConflict: "workspace_id,email" },
+  );
+  if (error) throw error;
 }
 
 async function upsertMembership(
@@ -80,7 +106,7 @@ async function upsertMembership(
   userId: string,
   role: string,
 ) {
-  const { data: workspaces, error: wsError } = await admin.from("workspaces").select("id").limit(1);
+  const { data: workspaces, error: wsError } = await admin.from("workspaces").select("id").eq("slug", "efeso-brazil").limit(1);
   if (wsError || !workspaces?.[0]) {
     throw new Error("workspace lookup failed");
   }
@@ -90,12 +116,13 @@ async function upsertMembership(
       workspace_id: workspaceId,
       user_id: userId,
       role,
+      status: "invited",
+      provisioned_reason: "email_allowlist",
     },
     { onConflict: "workspace_id,user_id" },
   );
   if (error) {
-    console.error("membership upsert failed — assign role manually in admin SQL after invite");
-    throw error;
+    console.error("membership upsert failed — allowlist is enough for first access");
   }
 }
 

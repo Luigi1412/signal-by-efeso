@@ -8,6 +8,13 @@ import { getSidebarUser } from "@/server/services/analysis-service";
 export const metadata: Metadata = { title: ui.accountPage.title };
 export const dynamic = "force-dynamic";
 
+function loginMethodLabel(provider: string | null): string {
+  if (!provider) return "—";
+  if (provider === "google") return "Google";
+  if (provider === "email") return "Email";
+  return provider;
+}
+
 export default async function AccountPage() {
   const [access, user] = await Promise.all([requireEfesoAccess(), getSidebarUser()]);
 
@@ -17,7 +24,11 @@ export default async function AccountPage() {
     { label: ui.accountPage.role, value: access.role },
     { label: ui.accountPage.organization, value: user.organization || "—" },
     { label: ui.accountPage.domain, value: access.emailDomain || "—" },
-    { label: ui.accountPage.status, value: ui.accountPage.statusActive },
+    {
+      label: ui.accountPage.status,
+      value: access.accountStatus === "invited" ? ui.accountPage.statusInvited : ui.accountPage.statusActive,
+    },
+    { label: ui.accountPage.loginMethod, value: loginMethodLabel(access.loginProvider) },
   ];
 
   return (

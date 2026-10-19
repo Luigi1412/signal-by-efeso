@@ -11,6 +11,7 @@ import {
   DEMO_MEMBER_PROFILE_NAME,
   EFESO_BRAZIL_SLUG,
 } from "@/server/constants";
+import { upsertAuthorizedEmail } from "@/server/access/authorized-emails";
 import type { WorkspaceRole } from "@/server/access/roles";
 
 export type DemoAccountKind = "member" | "admin" | "external";
@@ -141,6 +142,11 @@ export async function ensureDemoAccount(
     password,
   });
   if (account.role) {
+    await upsertAuthorizedEmail({
+      email: account.email,
+      role: account.role,
+      status: "active",
+    });
     await ensureDemoMembership({
       userId,
       role: account.role,

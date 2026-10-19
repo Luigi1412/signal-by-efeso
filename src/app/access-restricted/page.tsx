@@ -28,7 +28,11 @@ export default async function AccessRestrictedPage({
       ? { title: ui.accessRestricted.title, body: ui.accessRestricted.adminBody }
       : reason === "provision"
         ? { title: ui.accessRestricted.title, body: ui.accessRestricted.provisionBody }
-        : { title: ui.accessRestricted.title, body: ui.accessRestricted.body };
+        : reason === "not_authorized"
+          ? { title: ui.accessRestricted.title, body: ui.accessRestricted.notAuthorizedBody }
+          : reason === "disabled"
+            ? { title: ui.accessRestricted.title, body: ui.accessRestricted.disabledBody }
+            : { title: ui.accessRestricted.title, body: ui.accessRestricted.body };
 
   let signedIn = false;
   if (isSupabaseConfigured()) {

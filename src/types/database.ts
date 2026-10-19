@@ -221,6 +221,44 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"account_relationships": {
+                  Row: {
+                    "company_id": string,"created_at": string,"created_by": string | null,"data_quality": string,"id": string,"last_known_interaction_at": string | null,"metadata": NonNullable<Json>,"relationship_status": string,"relationship_strength": string,"relationship_summary": string | null,"source_reference": string | null,"source_type": string,"status": string,"supersedes_relationship_id": string | null,"updated_at": string,"version": number,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "company_id": string,"created_at"?: string,"created_by"?: string | null,"data_quality"?: string,"id"?: string,"last_known_interaction_at"?: string | null,"metadata"?: NonNullable<Json>,"relationship_status"?: string,"relationship_strength"?: string,"relationship_summary"?: string | null,"source_reference"?: string | null,"source_type": string,"status"?: string,"supersedes_relationship_id"?: string | null,"updated_at"?: string,"version"?: number,"workspace_id": string
+                  }
+                  Update: {
+                    "company_id"?: string,"created_at"?: string,"created_by"?: string | null,"data_quality"?: string,"id"?: string,"last_known_interaction_at"?: string | null,"metadata"?: NonNullable<Json>,"relationship_status"?: string,"relationship_strength"?: string,"relationship_summary"?: string | null,"source_reference"?: string | null,"source_type"?: string,"status"?: string,"supersedes_relationship_id"?: string | null,"updated_at"?: string,"version"?: number,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "account_relationships_company_workspace_fk"
+      columns: ["company_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "account_relationships_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "account_relationships_supersedes_fk"
+      columns: ["supersedes_relationship_id"]
+isOneToOne: false
+      referencedRelation: "account_relationships"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "account_relationships_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"account_tensions": {
                   Row: {
                     "account_intelligence_id": string,"created_at": string,"explanation": string,"id": string,"signal_a_id": string,"signal_b_id": string,"status": string,"tension_type": string,"workspace_id": string
@@ -489,18 +527,44 @@ isOneToOne: false
                   ]
                 },"companies": {
                   Row: {
-                    "archived_at": string | null,"company_type": string,"created_at": string,"description": string | null,"display_name": string,"id": string,"industry": string | null,"primary_country_code": string | null,"primary_domain": string | null,"primary_website_url": string | null,"resolution_status": string,"resolved_at": string | null,"slug": string,"subindustry": string | null,"updated_at": string,"workspace_id": string
+                    "archived_at": string | null,"company_type": string,"created_at": string,"description": string | null,"display_name": string,"id": string,"industry": string | null,"last_researched_at": string | null,"primary_country_code": string | null,"primary_domain": string | null,"primary_website_url": string | null,"resolution_status": string,"resolved_at": string | null,"slug": string,"subindustry": string | null,"updated_at": string,"workspace_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "archived_at"?: string | null,"company_type"?: string,"created_at"?: string,"description"?: string | null,"display_name": string,"id"?: string,"industry"?: string | null,"primary_country_code"?: string | null,"primary_domain"?: string | null,"primary_website_url"?: string | null,"resolution_status"?: string,"resolved_at"?: string | null,"slug": string,"subindustry"?: string | null,"updated_at"?: string,"workspace_id": string
+                    "archived_at"?: string | null,"company_type"?: string,"created_at"?: string,"description"?: string | null,"display_name": string,"id"?: string,"industry"?: string | null,"last_researched_at"?: string | null,"primary_country_code"?: string | null,"primary_domain"?: string | null,"primary_website_url"?: string | null,"resolution_status"?: string,"resolved_at"?: string | null,"slug": string,"subindustry"?: string | null,"updated_at"?: string,"workspace_id": string
                   }
                   Update: {
-                    "archived_at"?: string | null,"company_type"?: string,"created_at"?: string,"description"?: string | null,"display_name"?: string,"id"?: string,"industry"?: string | null,"primary_country_code"?: string | null,"primary_domain"?: string | null,"primary_website_url"?: string | null,"resolution_status"?: string,"resolved_at"?: string | null,"slug"?: string,"subindustry"?: string | null,"updated_at"?: string,"workspace_id"?: string
+                    "archived_at"?: string | null,"company_type"?: string,"created_at"?: string,"description"?: string | null,"display_name"?: string,"id"?: string,"industry"?: string | null,"last_researched_at"?: string | null,"primary_country_code"?: string | null,"primary_domain"?: string | null,"primary_website_url"?: string | null,"resolution_status"?: string,"resolved_at"?: string | null,"slug"?: string,"subindustry"?: string | null,"updated_at"?: string,"workspace_id"?: string
                   }
                   Relationships: [
                     {
       foreignKeyName: "companies_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"company_aliases": {
+                  Row: {
+                    "alias": string,"company_id": string,"created_at": string,"id": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "alias": string,"company_id": string,"created_at"?: string,"id"?: string,"workspace_id": string
+                  }
+                  Update: {
+                    "alias"?: string,"company_id"?: string,"created_at"?: string,"id"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "company_aliases_company_workspace_fk"
+      columns: ["company_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "company_aliases_workspace_id_fkey"
       columns: ["workspace_id"]
 isOneToOne: false
       referencedRelation: "workspaces"
@@ -531,6 +595,44 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "company_entities"
       referencedColumns: ["id","company_id"]
+    }
+                  ]
+                },"company_relationship_contacts": {
+                  Row: {
+                    "company_id": string,"created_at": string,"created_by": string | null,"id": string,"last_interaction_at": string | null,"notes": string | null,"relationship_person_id": string,"relationship_role": string,"source_reference": string | null,"source_type": string,"status": string,"strength": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "company_id": string,"created_at"?: string,"created_by"?: string | null,"id"?: string,"last_interaction_at"?: string | null,"notes"?: string | null,"relationship_person_id": string,"relationship_role": string,"source_reference"?: string | null,"source_type": string,"status"?: string,"strength"?: string,"workspace_id": string
+                  }
+                  Update: {
+                    "company_id"?: string,"created_at"?: string,"created_by"?: string | null,"id"?: string,"last_interaction_at"?: string | null,"notes"?: string | null,"relationship_person_id"?: string,"relationship_role"?: string,"source_reference"?: string | null,"source_type"?: string,"status"?: string,"strength"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "company_relationship_contacts_company_workspace_fk"
+      columns: ["company_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "company_relationship_contacts_created_by_fkey"
+      columns: ["created_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "company_relationship_contacts_person_workspace_fk"
+      columns: ["relationship_person_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "relationship_persons"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "company_relationship_contacts_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
     }
                   ]
                 },"efeso_fit_candidate_validations": {
@@ -705,14 +807,14 @@ isOneToOne: false
                   ]
                 },"efeso_knowledge_objects": {
                   Row: {
-                    "canonical_name": string,"created_at": string,"id": string,"metadata": NonNullable<Json>,"normalized_name": string,"object_type": string,"origin_candidate_id": string | null,"origin_model_run_id": string | null,"primary_content_block_id": string | null,"short_description": string,"source_snapshot_id": string,"status": string,"supersedes_object_id": string | null,"updated_at": string,"workspace_id": string
+                    "approved_for_display": boolean,"approved_for_matching": boolean,"canonical_name": string,"client_attribution": string,"commercial_terms_present": boolean,"confidentiality_level": string,"created_at": string,"effective_from": string | null,"effective_to": string | null,"id": string,"knowledge_nature": string,"metadata": NonNullable<Json>,"normalized_name": string,"object_type": string,"origin_candidate_id": string | null,"origin_model_run_id": string | null,"outcome_status": string,"primary_content_block_id": string | null,"short_description": string,"source_document_type": string | null,"source_snapshot_id": string,"stable_key": string | null,"status": string,"supersedes_object_id": string | null,"updated_at": string,"visibility_level": string,"workspace_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "canonical_name": string,"created_at"?: string,"id"?: string,"metadata"?: NonNullable<Json>,"normalized_name": string,"object_type": string,"origin_candidate_id"?: string | null,"origin_model_run_id"?: string | null,"primary_content_block_id"?: string | null,"short_description": string,"source_snapshot_id": string,"status"?: string,"supersedes_object_id"?: string | null,"updated_at"?: string,"workspace_id": string
+                    "approved_for_display"?: boolean,"approved_for_matching"?: boolean,"canonical_name": string,"client_attribution"?: string,"commercial_terms_present"?: boolean,"confidentiality_level"?: string,"created_at"?: string,"effective_from"?: string | null,"effective_to"?: string | null,"id"?: string,"knowledge_nature"?: string,"metadata"?: NonNullable<Json>,"normalized_name": string,"object_type": string,"origin_candidate_id"?: string | null,"origin_model_run_id"?: string | null,"outcome_status"?: string,"primary_content_block_id"?: string | null,"short_description": string,"source_document_type"?: string | null,"source_snapshot_id": string,"stable_key"?: string | null,"status"?: string,"supersedes_object_id"?: string | null,"updated_at"?: string,"visibility_level"?: string,"workspace_id": string
                   }
                   Update: {
-                    "canonical_name"?: string,"created_at"?: string,"id"?: string,"metadata"?: NonNullable<Json>,"normalized_name"?: string,"object_type"?: string,"origin_candidate_id"?: string | null,"origin_model_run_id"?: string | null,"primary_content_block_id"?: string | null,"short_description"?: string,"source_snapshot_id"?: string,"status"?: string,"supersedes_object_id"?: string | null,"updated_at"?: string,"workspace_id"?: string
+                    "approved_for_display"?: boolean,"approved_for_matching"?: boolean,"canonical_name"?: string,"client_attribution"?: string,"commercial_terms_present"?: boolean,"confidentiality_level"?: string,"created_at"?: string,"effective_from"?: string | null,"effective_to"?: string | null,"id"?: string,"knowledge_nature"?: string,"metadata"?: NonNullable<Json>,"normalized_name"?: string,"object_type"?: string,"origin_candidate_id"?: string | null,"origin_model_run_id"?: string | null,"outcome_status"?: string,"primary_content_block_id"?: string | null,"short_description"?: string,"source_document_type"?: string | null,"source_snapshot_id"?: string,"stable_key"?: string | null,"status"?: string,"supersedes_object_id"?: string | null,"updated_at"?: string,"visibility_level"?: string,"workspace_id"?: string
                   }
                   Relationships: [
                     {
@@ -779,6 +881,108 @@ isOneToOne: false
       referencedColumns: ["id","workspace_id"]
     },{
       foreignKeyName: "evidence_fragments_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"external_research_events": {
+                  Row: {
+                    "actor_user_id": string | null,"created_at": string,"event_type": string,"id": string,"payload": NonNullable<Json>,"research_run_id": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "actor_user_id"?: string | null,"created_at"?: string,"event_type": string,"id"?: string,"payload"?: NonNullable<Json>,"research_run_id": string,"workspace_id": string
+                  }
+                  Update: {
+                    "actor_user_id"?: string | null,"created_at"?: string,"event_type"?: string,"id"?: string,"payload"?: NonNullable<Json>,"research_run_id"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "external_research_events_run_workspace_fk"
+      columns: ["research_run_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "external_research_runs"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "external_research_events_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"external_research_runs": {
+                  Row: {
+                    "accepted_source_count": number,"analysis_id": string | null,"completed_at": string | null,"created_at": string,"created_by": string | null,"failure_code": string | null,"failure_reason": string | null,"id": string,"normalized_query": string,"rejected_source_count": number,"requested_country": string | null,"requested_industry": string | null,"requested_query": string,"research_run_id": string | null,"resolution_payload": NonNullable<Json>,"resolved_company_id": string | null,"source_count": number,"started_at": string,"status": string,"time_horizon_months": number,"unavailable_source_count": number,"updated_at": string,"worker_heartbeat_at": string | null,"worker_id": string | null,"worker_lock_until": string | null,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "accepted_source_count"?: number,"analysis_id"?: string | null,"completed_at"?: string | null,"created_at"?: string,"created_by"?: string | null,"failure_code"?: string | null,"failure_reason"?: string | null,"id"?: string,"normalized_query": string,"rejected_source_count"?: number,"requested_country"?: string | null,"requested_industry"?: string | null,"requested_query": string,"research_run_id"?: string | null,"resolution_payload"?: NonNullable<Json>,"resolved_company_id"?: string | null,"source_count"?: number,"started_at"?: string,"status"?: string,"time_horizon_months"?: number,"unavailable_source_count"?: number,"updated_at"?: string,"worker_heartbeat_at"?: string | null,"worker_id"?: string | null,"worker_lock_until"?: string | null,"workspace_id": string
+                  }
+                  Update: {
+                    "accepted_source_count"?: number,"analysis_id"?: string | null,"completed_at"?: string | null,"created_at"?: string,"created_by"?: string | null,"failure_code"?: string | null,"failure_reason"?: string | null,"id"?: string,"normalized_query"?: string,"rejected_source_count"?: number,"requested_country"?: string | null,"requested_industry"?: string | null,"requested_query"?: string,"research_run_id"?: string | null,"resolution_payload"?: NonNullable<Json>,"resolved_company_id"?: string | null,"source_count"?: number,"started_at"?: string,"status"?: string,"time_horizon_months"?: number,"unavailable_source_count"?: number,"updated_at"?: string,"worker_heartbeat_at"?: string | null,"worker_id"?: string | null,"worker_lock_until"?: string | null,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "external_research_runs_analysis_workspace_fk"
+      columns: ["analysis_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "analyses"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "external_research_runs_company_workspace_fk"
+      columns: ["resolved_company_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "external_research_runs_run_workspace_fk"
+      columns: ["research_run_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "research_runs"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "external_research_runs_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"external_source_candidates": {
+                  Row: {
+                    "canonical_url": string | null,"content_hash": string | null,"created_at": string,"discovered_at": string,"id": string,"normalized_url": string,"published_at": string | null,"publisher": string,"rejection_reason": string | null,"research_run_id": string,"snapshot_id": string | null,"source_id": string | null,"source_quality": string,"source_tier": number,"source_type": string,"status": string,"title": string | null,"url": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "canonical_url"?: string | null,"content_hash"?: string | null,"created_at"?: string,"discovered_at"?: string,"id"?: string,"normalized_url": string,"published_at"?: string | null,"publisher": string,"rejection_reason"?: string | null,"research_run_id": string,"snapshot_id"?: string | null,"source_id"?: string | null,"source_quality": string,"source_tier": number,"source_type": string,"status"?: string,"title"?: string | null,"url": string,"workspace_id": string
+                  }
+                  Update: {
+                    "canonical_url"?: string | null,"content_hash"?: string | null,"created_at"?: string,"discovered_at"?: string,"id"?: string,"normalized_url"?: string,"published_at"?: string | null,"publisher"?: string,"rejection_reason"?: string | null,"research_run_id"?: string,"snapshot_id"?: string | null,"source_id"?: string | null,"source_quality"?: string,"source_tier"?: number,"source_type"?: string,"status"?: string,"title"?: string | null,"url"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "external_source_candidates_run_workspace_fk"
+      columns: ["research_run_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "external_research_runs"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "external_source_candidates_snapshot_workspace_fk"
+      columns: ["snapshot_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "source_snapshots"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "external_source_candidates_source_workspace_fk"
+      columns: ["source_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "sources"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "external_source_candidates_workspace_id_fkey"
       columns: ["workspace_id"]
 isOneToOne: false
       referencedRelation: "workspaces"
@@ -1117,6 +1321,272 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"opportunities": {
+                  Row: {
+                    "account_intelligence_id": string | null,"assertion_mode": string,"company_id": string,"confidence_tier": string,"created_at": string,"dismissal_reason": string | null,"geography": string | null,"id": string,"maturity": string,"metadata": NonNullable<Json>,"opportunity_type": string,"origin_model_run_id": string | null,"origin_opportunity_candidate_id": string | null,"parent_opportunity_id": string | null,"primary_efeso_fit_id": string | null,"relevance_level": string,"status": string,"summary": string,"supersedes_opportunity_id": string | null,"title": string,"updated_at": string,"urgency_level": string,"version": number,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "account_intelligence_id"?: string | null,"assertion_mode": string,"company_id": string,"confidence_tier": string,"created_at"?: string,"dismissal_reason"?: string | null,"geography"?: string | null,"id"?: string,"maturity": string,"metadata"?: NonNullable<Json>,"opportunity_type": string,"origin_model_run_id"?: string | null,"origin_opportunity_candidate_id"?: string | null,"parent_opportunity_id"?: string | null,"primary_efeso_fit_id"?: string | null,"relevance_level": string,"status"?: string,"summary": string,"supersedes_opportunity_id"?: string | null,"title": string,"updated_at"?: string,"urgency_level": string,"version"?: number,"workspace_id": string
+                  }
+                  Update: {
+                    "account_intelligence_id"?: string | null,"assertion_mode"?: string,"company_id"?: string,"confidence_tier"?: string,"created_at"?: string,"dismissal_reason"?: string | null,"geography"?: string | null,"id"?: string,"maturity"?: string,"metadata"?: NonNullable<Json>,"opportunity_type"?: string,"origin_model_run_id"?: string | null,"origin_opportunity_candidate_id"?: string | null,"parent_opportunity_id"?: string | null,"primary_efeso_fit_id"?: string | null,"relevance_level"?: string,"status"?: string,"summary"?: string,"supersedes_opportunity_id"?: string | null,"title"?: string,"updated_at"?: string,"urgency_level"?: string,"version"?: number,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "opportunities_account_intelligence_fk"
+      columns: ["account_intelligence_id"]
+isOneToOne: false
+      referencedRelation: "account_intelligence"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "opportunities_company_workspace_fk"
+      columns: ["company_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunities_origin_candidate_fk"
+      columns: ["origin_opportunity_candidate_id"]
+isOneToOne: false
+      referencedRelation: "opportunity_candidates"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "opportunities_origin_run_workspace_fk"
+      columns: ["origin_model_run_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "model_runs"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunities_parent_fk"
+      columns: ["parent_opportunity_id"]
+isOneToOne: false
+      referencedRelation: "opportunities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "opportunities_primary_fit_fk"
+      columns: ["primary_efeso_fit_id"]
+isOneToOne: false
+      referencedRelation: "efeso_fits"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "opportunities_supersedes_fk"
+      columns: ["supersedes_opportunity_id"]
+isOneToOne: false
+      referencedRelation: "opportunities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "opportunities_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"opportunity_candidate_validations": {
+                  Row: {
+                    "created_at": string,"details": NonNullable<Json>,"id": string,"message": string | null,"model_run_id": string | null,"opportunity_candidate_id": string,"result": string,"severity": string,"validation_round": number,"validator_code": string,"validator_type": string,"validator_version": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"details"?: NonNullable<Json>,"id"?: string,"message"?: string | null,"model_run_id"?: string | null,"opportunity_candidate_id": string,"result": string,"severity": string,"validation_round"?: number,"validator_code": string,"validator_type": string,"validator_version": string,"workspace_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"details"?: NonNullable<Json>,"id"?: string,"message"?: string | null,"model_run_id"?: string | null,"opportunity_candidate_id"?: string,"result"?: string,"severity"?: string,"validation_round"?: number,"validator_code"?: string,"validator_type"?: string,"validator_version"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "opportunity_candidate_validations_candidate_workspace_fk"
+      columns: ["opportunity_candidate_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "opportunity_candidates"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_candidate_validations_run_workspace_fk"
+      columns: ["model_run_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "model_runs"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_candidate_validations_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"opportunity_candidates": {
+                  Row: {
+                    "analysis_id": string,"candidate_fingerprint": string,"company_id": string,"created_at": string,"generation_model_run_id": string | null,"id": string,"metadata": NonNullable<Json>,"promoted_at": string | null,"promoted_opportunity_id": string | null,"proposed_account_intelligence_id": string | null,"proposed_assertion_mode": string,"proposed_confidence_tier": string,"proposed_fit_links": NonNullable<Json>,"proposed_geography": string | null,"proposed_knowledge_links": NonNullable<Json>,"proposed_maturity": string,"proposed_opportunity_type": string,"proposed_parent_opportunity_id": string | null,"proposed_primary_efeso_fit_id": string | null,"proposed_rationale": string,"proposed_rationale_blocks": NonNullable<Json>,"proposed_relevance_level": string,"proposed_signal_links": NonNullable<Json>,"proposed_summary": string,"proposed_title": string,"proposed_urgency_level": string,"rejection_reason_code": string | null,"rejection_reason_text": string | null,"research_run_id": string,"source_snapshot_id": string | null,"status": string,"validated_at": string | null,"version": number,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "analysis_id": string,"candidate_fingerprint": string,"company_id": string,"created_at"?: string,"generation_model_run_id"?: string | null,"id"?: string,"metadata"?: NonNullable<Json>,"promoted_at"?: string | null,"promoted_opportunity_id"?: string | null,"proposed_account_intelligence_id"?: string | null,"proposed_assertion_mode": string,"proposed_confidence_tier": string,"proposed_fit_links"?: NonNullable<Json>,"proposed_geography"?: string | null,"proposed_knowledge_links"?: NonNullable<Json>,"proposed_maturity": string,"proposed_opportunity_type": string,"proposed_parent_opportunity_id"?: string | null,"proposed_primary_efeso_fit_id"?: string | null,"proposed_rationale": string,"proposed_rationale_blocks"?: NonNullable<Json>,"proposed_relevance_level": string,"proposed_signal_links"?: NonNullable<Json>,"proposed_summary": string,"proposed_title": string,"proposed_urgency_level": string,"rejection_reason_code"?: string | null,"rejection_reason_text"?: string | null,"research_run_id": string,"source_snapshot_id"?: string | null,"status"?: string,"validated_at"?: string | null,"version"?: number,"workspace_id": string
+                  }
+                  Update: {
+                    "analysis_id"?: string,"candidate_fingerprint"?: string,"company_id"?: string,"created_at"?: string,"generation_model_run_id"?: string | null,"id"?: string,"metadata"?: NonNullable<Json>,"promoted_at"?: string | null,"promoted_opportunity_id"?: string | null,"proposed_account_intelligence_id"?: string | null,"proposed_assertion_mode"?: string,"proposed_confidence_tier"?: string,"proposed_fit_links"?: NonNullable<Json>,"proposed_geography"?: string | null,"proposed_knowledge_links"?: NonNullable<Json>,"proposed_maturity"?: string,"proposed_opportunity_type"?: string,"proposed_parent_opportunity_id"?: string | null,"proposed_primary_efeso_fit_id"?: string | null,"proposed_rationale"?: string,"proposed_rationale_blocks"?: NonNullable<Json>,"proposed_relevance_level"?: string,"proposed_signal_links"?: NonNullable<Json>,"proposed_summary"?: string,"proposed_title"?: string,"proposed_urgency_level"?: string,"rejection_reason_code"?: string | null,"rejection_reason_text"?: string | null,"research_run_id"?: string,"source_snapshot_id"?: string | null,"status"?: string,"validated_at"?: string | null,"version"?: number,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "opportunity_candidates_analysis_workspace_fk"
+      columns: ["analysis_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "analyses"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_candidates_company_workspace_fk"
+      columns: ["company_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_candidates_origin_run_workspace_fk"
+      columns: ["generation_model_run_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "model_runs"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_candidates_run_analysis_workspace_fk"
+      columns: ["research_run_id","analysis_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "research_runs"
+      referencedColumns: ["id","analysis_id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_candidates_snapshot_workspace_fk"
+      columns: ["source_snapshot_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "source_snapshots"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_candidates_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"opportunity_efeso_fits": {
+                  Row: {
+                    "created_at": string,"efeso_fit_id": string,"id": string,"opportunity_id": string,"relationship_type": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"efeso_fit_id": string,"id"?: string,"opportunity_id": string,"relationship_type": string,"workspace_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"efeso_fit_id"?: string,"id"?: string,"opportunity_id"?: string,"relationship_type"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "opportunity_efeso_fits_fit_fk"
+      columns: ["efeso_fit_id"]
+isOneToOne: false
+      referencedRelation: "efeso_fits"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "opportunity_efeso_fits_opportunity_workspace_fk"
+      columns: ["opportunity_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "opportunities"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_efeso_fits_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"opportunity_knowledge_objects": {
+                  Row: {
+                    "created_at": string,"id": string,"knowledge_object_id": string,"opportunity_id": string,"relationship_type": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"knowledge_object_id": string,"opportunity_id": string,"relationship_type": string,"workspace_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"knowledge_object_id"?: string,"opportunity_id"?: string,"relationship_type"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "opportunity_knowledge_objects_ko_workspace_fk"
+      columns: ["knowledge_object_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "efeso_knowledge_objects"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_knowledge_objects_opportunity_workspace_fk"
+      columns: ["opportunity_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "opportunities"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_knowledge_objects_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"opportunity_rationales": {
+                  Row: {
+                    "created_at": string,"id": string,"opportunity_id": string,"rationale_type": string,"source_id": string | null,"source_type": string | null,"statement": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"opportunity_id": string,"rationale_type": string,"source_id"?: string | null,"source_type"?: string | null,"statement": string,"workspace_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"opportunity_id"?: string,"rationale_type"?: string,"source_id"?: string | null,"source_type"?: string | null,"statement"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "opportunity_rationales_opportunity_workspace_fk"
+      columns: ["opportunity_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "opportunities"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_rationales_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"opportunity_signals": {
+                  Row: {
+                    "created_at": string,"id": string,"opportunity_id": string,"relationship_type": string,"signal_id": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"opportunity_id": string,"relationship_type": string,"signal_id": string,"workspace_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"opportunity_id"?: string,"relationship_type"?: string,"signal_id"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "opportunity_signals_opportunity_workspace_fk"
+      columns: ["opportunity_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "opportunities"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_signals_signal_workspace_fk"
+      columns: ["signal_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "signals"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "opportunity_signals_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"profiles": {
                   Row: {
                     "avatar_url": string | null,"created_at": string,"full_name": string,"id": string,"job_title": string | null,"preferred_locale": string,"updated_at": string
@@ -1130,6 +1600,312 @@ isOneToOne: false
                   }
                   Relationships: [
                     
+                  ]
+                },"recommended_action_candidate_validations": {
+                  Row: {
+                    "created_at": string,"details": NonNullable<Json>,"id": string,"message": string | null,"model_run_id": string | null,"recommended_action_candidate_id": string,"result": string,"severity": string,"validation_round": number,"validator_code": string,"validator_type": string,"validator_version": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"details"?: NonNullable<Json>,"id"?: string,"message"?: string | null,"model_run_id"?: string | null,"recommended_action_candidate_id": string,"result": string,"severity": string,"validation_round"?: number,"validator_code": string,"validator_type": string,"validator_version": string,"workspace_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"details"?: NonNullable<Json>,"id"?: string,"message"?: string | null,"model_run_id"?: string | null,"recommended_action_candidate_id"?: string,"result"?: string,"severity"?: string,"validation_round"?: number,"validator_code"?: string,"validator_type"?: string,"validator_version"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "recommended_action_candidate_validations_candidate_workspace_fk"
+      columns: ["recommended_action_candidate_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "recommended_action_candidates"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_candidate_validations_run_workspace_fk"
+      columns: ["model_run_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "model_runs"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_candidate_validations_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"recommended_action_candidates": {
+                  Row: {
+                    "analysis_id": string,"candidate_fingerprint": string,"company_id": string,"created_at": string,"generation_model_run_id": string | null,"id": string,"metadata": NonNullable<Json>,"opportunity_id": string | null,"promoted_action_id": string | null,"promoted_at": string | null,"proposed_action_type": string,"proposed_confidence_tier": string,"proposed_knowledge_links": NonNullable<Json>,"proposed_opportunity_links": NonNullable<Json>,"proposed_priority": string,"proposed_rationale": string,"proposed_rationale_blocks": NonNullable<Json>,"proposed_relationship_links": NonNullable<Json>,"proposed_title": string,"rejection_reason_code": string | null,"rejection_reason_text": string | null,"research_run_id": string,"status": string,"validated_at": string | null,"version": number,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "analysis_id": string,"candidate_fingerprint": string,"company_id": string,"created_at"?: string,"generation_model_run_id"?: string | null,"id"?: string,"metadata"?: NonNullable<Json>,"opportunity_id"?: string | null,"promoted_action_id"?: string | null,"promoted_at"?: string | null,"proposed_action_type": string,"proposed_confidence_tier": string,"proposed_knowledge_links"?: NonNullable<Json>,"proposed_opportunity_links"?: NonNullable<Json>,"proposed_priority": string,"proposed_rationale": string,"proposed_rationale_blocks"?: NonNullable<Json>,"proposed_relationship_links"?: NonNullable<Json>,"proposed_title": string,"rejection_reason_code"?: string | null,"rejection_reason_text"?: string | null,"research_run_id": string,"status"?: string,"validated_at"?: string | null,"version"?: number,"workspace_id": string
+                  }
+                  Update: {
+                    "analysis_id"?: string,"candidate_fingerprint"?: string,"company_id"?: string,"created_at"?: string,"generation_model_run_id"?: string | null,"id"?: string,"metadata"?: NonNullable<Json>,"opportunity_id"?: string | null,"promoted_action_id"?: string | null,"promoted_at"?: string | null,"proposed_action_type"?: string,"proposed_confidence_tier"?: string,"proposed_knowledge_links"?: NonNullable<Json>,"proposed_opportunity_links"?: NonNullable<Json>,"proposed_priority"?: string,"proposed_rationale"?: string,"proposed_rationale_blocks"?: NonNullable<Json>,"proposed_relationship_links"?: NonNullable<Json>,"proposed_title"?: string,"rejection_reason_code"?: string | null,"rejection_reason_text"?: string | null,"research_run_id"?: string,"status"?: string,"validated_at"?: string | null,"version"?: number,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "recommended_action_candidates_analysis_workspace_fk"
+      columns: ["analysis_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "analyses"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_candidates_company_workspace_fk"
+      columns: ["company_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_candidates_origin_run_workspace_fk"
+      columns: ["generation_model_run_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "model_runs"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_candidates_run_analysis_workspace_fk"
+      columns: ["research_run_id","analysis_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "research_runs"
+      referencedColumns: ["id","analysis_id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_candidates_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"recommended_action_events": {
+                  Row: {
+                    "action_id": string,"actor_user_id": string | null,"created_at": string,"from_status": string | null,"id": string,"reason": string | null,"to_status": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action_id": string,"actor_user_id"?: string | null,"created_at"?: string,"from_status"?: string | null,"id"?: string,"reason"?: string | null,"to_status": string,"workspace_id": string
+                  }
+                  Update: {
+                    "action_id"?: string,"actor_user_id"?: string | null,"created_at"?: string,"from_status"?: string | null,"id"?: string,"reason"?: string | null,"to_status"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "recommended_action_events_action_workspace_fk"
+      columns: ["action_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "recommended_actions"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_events_actor_user_id_fkey"
+      columns: ["actor_user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "recommended_action_events_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"recommended_action_knowledge_objects": {
+                  Row: {
+                    "action_id": string,"created_at": string,"knowledge_object_id": string,"relationship_type": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action_id": string,"created_at"?: string,"knowledge_object_id": string,"relationship_type"?: string,"workspace_id": string
+                  }
+                  Update: {
+                    "action_id"?: string,"created_at"?: string,"knowledge_object_id"?: string,"relationship_type"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "recommended_action_knowledge_action_workspace_fk"
+      columns: ["action_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "recommended_actions"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_knowledge_object_fk"
+      columns: ["knowledge_object_id"]
+isOneToOne: false
+      referencedRelation: "efeso_knowledge_objects"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "recommended_action_knowledge_objects_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"recommended_action_opportunities": {
+                  Row: {
+                    "action_id": string,"created_at": string,"opportunity_id": string,"relationship_type": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action_id": string,"created_at"?: string,"opportunity_id": string,"relationship_type": string,"workspace_id": string
+                  }
+                  Update: {
+                    "action_id"?: string,"created_at"?: string,"opportunity_id"?: string,"relationship_type"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "recommended_action_opportunities_action_workspace_fk"
+      columns: ["action_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "recommended_actions"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_opportunities_opportunity_fk"
+      columns: ["opportunity_id"]
+isOneToOne: false
+      referencedRelation: "opportunities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "recommended_action_opportunities_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"recommended_action_rationales": {
+                  Row: {
+                    "action_id": string,"created_at": string,"id": string,"rationale_type": string,"source_id": string | null,"source_type": string | null,"statement": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action_id": string,"created_at"?: string,"id"?: string,"rationale_type": string,"source_id"?: string | null,"source_type"?: string | null,"statement": string,"workspace_id": string
+                  }
+                  Update: {
+                    "action_id"?: string,"created_at"?: string,"id"?: string,"rationale_type"?: string,"source_id"?: string | null,"source_type"?: string | null,"statement"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "recommended_action_rationales_action_workspace_fk"
+      columns: ["action_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "recommended_actions"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_rationales_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"recommended_action_relationships": {
+                  Row: {
+                    "account_relationship_id": string,"action_id": string,"created_at": string,"relationship_type": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "account_relationship_id": string,"action_id": string,"created_at"?: string,"relationship_type": string,"workspace_id": string
+                  }
+                  Update: {
+                    "account_relationship_id"?: string,"action_id"?: string,"created_at"?: string,"relationship_type"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "recommended_action_relationships_action_workspace_fk"
+      columns: ["action_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "recommended_actions"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_action_relationships_rel_fk"
+      columns: ["account_relationship_id"]
+isOneToOne: false
+      referencedRelation: "account_relationships"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "recommended_action_relationships_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"recommended_actions": {
+                  Row: {
+                    "action_type": string,"company_id": string,"confidence_tier": string,"created_at": string,"dismissal_reason": string | null,"id": string,"metadata": NonNullable<Json>,"opportunity_id": string | null,"origin_action_candidate_id": string | null,"origin_model_run_id": string | null,"priority": string,"rationale": string,"relationship_context_id": string | null,"status": string,"supersedes_action_id": string | null,"title": string,"updated_at": string,"version": number,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "action_type": string,"company_id": string,"confidence_tier": string,"created_at"?: string,"dismissal_reason"?: string | null,"id"?: string,"metadata"?: NonNullable<Json>,"opportunity_id"?: string | null,"origin_action_candidate_id"?: string | null,"origin_model_run_id"?: string | null,"priority": string,"rationale": string,"relationship_context_id"?: string | null,"status"?: string,"supersedes_action_id"?: string | null,"title": string,"updated_at"?: string,"version"?: number,"workspace_id": string
+                  }
+                  Update: {
+                    "action_type"?: string,"company_id"?: string,"confidence_tier"?: string,"created_at"?: string,"dismissal_reason"?: string | null,"id"?: string,"metadata"?: NonNullable<Json>,"opportunity_id"?: string | null,"origin_action_candidate_id"?: string | null,"origin_model_run_id"?: string | null,"priority"?: string,"rationale"?: string,"relationship_context_id"?: string | null,"status"?: string,"supersedes_action_id"?: string | null,"title"?: string,"updated_at"?: string,"version"?: number,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "recommended_actions_company_workspace_fk"
+      columns: ["company_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "companies"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_actions_opportunity_fk"
+      columns: ["opportunity_id"]
+isOneToOne: false
+      referencedRelation: "opportunities"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "recommended_actions_origin_candidate_fk"
+      columns: ["origin_action_candidate_id"]
+isOneToOne: false
+      referencedRelation: "recommended_action_candidates"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "recommended_actions_origin_run_workspace_fk"
+      columns: ["origin_model_run_id","workspace_id"]
+isOneToOne: false
+      referencedRelation: "model_runs"
+      referencedColumns: ["id","workspace_id"]
+    },{
+      foreignKeyName: "recommended_actions_relationship_fk"
+      columns: ["relationship_context_id"]
+isOneToOne: false
+      referencedRelation: "account_relationships"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "recommended_actions_supersedes_fk"
+      columns: ["supersedes_action_id"]
+isOneToOne: false
+      referencedRelation: "recommended_actions"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "recommended_actions_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"relationship_persons": {
+                  Row: {
+                    "created_at": string,"display_name": string,"email": string | null,"id": string,"metadata": NonNullable<Json>,"organization": string,"person_type": string,"role_title": string | null,"status": string,"updated_at": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"display_name": string,"email"?: string | null,"id"?: string,"metadata"?: NonNullable<Json>,"organization": string,"person_type": string,"role_title"?: string | null,"status"?: string,"updated_at"?: string,"workspace_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"display_name"?: string,"email"?: string | null,"id"?: string,"metadata"?: NonNullable<Json>,"organization"?: string,"person_type"?: string,"role_title"?: string | null,"status"?: string,"updated_at"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "relationship_persons_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
                   ]
                 },"research_run_sources": {
                   Row: {
@@ -1583,6 +2359,26 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"workspace_authorized_emails": {
+                  Row: {
+                    "activated_at": string | null,"activated_user_id": string | null,"created_at": string,"email": string,"id": string,"invited_at": string,"role": string,"status": string,"updated_at": string,"workspace_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "activated_at"?: string | null,"activated_user_id"?: string | null,"created_at"?: string,"email": string,"id"?: string,"invited_at"?: string,"role"?: string,"status"?: string,"updated_at"?: string,"workspace_id": string
+                  }
+                  Update: {
+                    "activated_at"?: string | null,"activated_user_id"?: string | null,"created_at"?: string,"email"?: string,"id"?: string,"invited_at"?: string,"role"?: string,"status"?: string,"updated_at"?: string,"workspace_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "workspace_authorized_emails_workspace_id_fkey"
+      columns: ["workspace_id"]
+isOneToOne: false
+      referencedRelation: "workspaces"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"workspace_memberships": {
                   Row: {
                     "created_at": string,"id": string,"joined_at": string,"provisioned_reason": string | null,"role": string,"status": string,"updated_at": string,"user_id": string,"workspace_id": string
@@ -1623,11 +2419,26 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "is_active_workspace_member":
+            "dismiss_opportunity":
+{ Args: { "p_opportunity_id": string,"p_reason": string }; Returns: undefined
+                           },
+"dismiss_recommended_action":
+{ Args: { "p_action_id": string,"p_reason": string }; Returns: undefined
+                           },
+"is_active_workspace_member":
 { Args: { "p_workspace_id": string }; Returns: boolean
+                           },
+"is_pipeline_service_role":
+{ Args: Record<PropertyKey, never>; Returns: boolean
                            },
 "is_workspace_admin":
 { Args: { "p_workspace_id": string }; Returns: boolean
+                           },
+"knowledge_member_can_read":
+{ Args: { "p_approved_display": boolean,"p_commercial": boolean,"p_confidentiality": string,"p_nature": string,"p_visibility": string,"p_workspace_id": string }; Returns: boolean
+                           },
+"pipeline_actor_uid":
+{ Args: Record<PropertyKey, never>; Returns: string
                            },
 "promote_account_intelligence_candidate":
 { Args: { "p_candidate_id": string }; Returns: string
@@ -1647,17 +2458,11 @@ isOneToOne: false
 "promote_recommended_action_candidate":
 { Args: { "p_candidate_id": string }; Returns: string
                            },
-"dismiss_recommended_action":
-{ Args: { "p_action_id": string, "p_reason": string }; Returns: undefined
-                           },
-"set_recommended_action_status":
-{ Args: { "p_action_id": string, "p_status": string, "p_reason": string }; Returns: undefined
-                           },
-"dismiss_opportunity":
-{ Args: { "p_opportunity_id": string, "p_reason": string }; Returns: undefined
-                           },
 "promote_signal_candidate":
 { Args: { "p_candidate_id": string }; Returns: string
+                           },
+"set_recommended_action_status":
+{ Args: { "p_action_id": string,"p_reason": string,"p_status": string }; Returns: undefined
                            },
 "storage_workspace_id_from_object_name":
 { Args: { "p_name": string }; Returns: string

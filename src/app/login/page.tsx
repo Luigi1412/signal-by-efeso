@@ -35,6 +35,7 @@ export default async function LoginPage({
 
   const query = await searchParams;
   const expired = query.expired === "1";
+  const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED?.trim().toLowerCase() === "true";
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -52,7 +53,7 @@ export default async function LoginPage({
           {expired ? <p className="mt-3 text-sm text-muted-foreground">{ui.login.sessionExpired}</p> : null}
 
           <div className="mt-10">
-            <LoginForm demoMode={isDemoAuthMode()} />
+            <LoginForm demoMode={isDemoAuthMode()} googleEnabled={googleEnabled} />
             <p className="mt-4 text-xs text-muted-foreground">{ui.login.restricted}</p>
           </div>
         </div>

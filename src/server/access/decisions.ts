@@ -1,12 +1,23 @@
 import { extractEmailDomain, isAllowedCorporateEmail } from "./email-domains";
 import { isAdminRole, type WorkspaceRole } from "./roles";
+import type { AuthorizedEmailStatus } from "./authorized-emails";
 
 export type AccessDecision =
   | { kind: "unauthenticated" }
   | { kind: "config_missing" }
   | { kind: "invalid_email" }
   | { kind: "domain_denied"; emailDomain: string | null }
-  | { kind: "needs_provision"; email: string; emailDomain: string }
+  /** EFESO domain but email was never pre-authorized. */
+  | { kind: "not_authorized"; email: string; emailDomain: string }
+  | { kind: "disabled"; email: string; emailDomain: string }
+  /** Pre-authorized (invited/active) but membership not yet active — first access. */
+  | {
+      kind: "needs_activation";
+      email: string;
+      emailDomain: string;
+      role: WorkspaceRole;
+      authorizationStatus: AuthorizedEmailStatus;
+    }
   | {
       kind: "authorized";
       email: string;
@@ -20,11 +31,13 @@ export function decideAccess(input: {
   email: string | null | undefined;
   allowedDomains: readonly string[];
   membershipRole: string | null;
+  /** null = email not on allowlist */
+  authorization: { status: AuthorizedEmailStatus; role: WorkspaceRole } | null;
 }): AccessDecision {
   if (!input.authenticated) return { kind: "unauthenticated" };
   if (input.allowedDomains.length === 0) return { kind: "config_missing" };
 
-  const email = input.email?.trim() ?? "";
+  const email = input.email?.trim().toLowerCase() ?? "";
   if (!email) return { kind: "invalid_email" };
 
   const emailDomain = extractEmailDomain(email);
@@ -32,16 +45,30 @@ export function decideAccess(input: {
     return { kind: "domain_denied", emailDomain };
   }
 
-  if (!input.membershipRole) {
-    return { kind: "needs_provision", email: email.trim().toLowerCase(), emailDomain };
+  if (!input.authorization) {
+    return { kind: "not_authorized", email, emailDomain };
+  }
+
+  if (input.authorization.status === "disabled") {
+    return { kind: "disabled", email, emailDomain };
+  }
+
+  if (input.membershipRole) {
+    return {
+      kind: "authorized",
+      email,
+      emailDomain,
+      role: input.membershipRole as WorkspaceRole,
+      isAdmin: isAdminRole(input.membershipRole),
+    };
   }
 
   return {
-    kind: "authorized",
-    email: email.trim().toLowerCase(),
+    kind: "needs_activation",
+    email,
     emailDomain,
-    role: input.membershipRole as WorkspaceRole,
-    isAdmin: isAdminRole(input.membershipRole),
+    role: input.authorization.role,
+    authorizationStatus: input.authorization.status,
   };
 }
 

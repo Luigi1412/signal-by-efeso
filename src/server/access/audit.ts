@@ -5,7 +5,9 @@ export type AccessAuditEventType =
   | "invalid_domain"
   | "membership_provisioned"
   | "admin_route_denied"
-  | "authorization_failure";
+  | "authorization_failure"
+  | "email_not_authorized"
+  | "first_access_activated";
 
 export async function recordAccessAudit(input: {
   eventType: AccessAuditEventType;

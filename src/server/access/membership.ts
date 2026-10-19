@@ -41,7 +41,7 @@ export async function getActiveEfesoMembership(userId: string): Promise<Workspac
   };
 }
 
-export async function upsertDemoProfile(input: {
+export async function upsertProfile(input: {
   userId: string;
   fullName: string;
   jobTitle: string;
@@ -59,20 +59,42 @@ export async function upsertDemoProfile(input: {
   if (error) throw error;
 }
 
-export async function provisionEfesoMembership(input: {
+/** @deprecated Prefer upsertProfile — kept for demo bootstrap compatibility. */
+export async function upsertDemoProfile(input: {
   userId: string;
-  reason: "corporate_domain" | "demo_seed";
-  role?: WorkspaceRole;
+  fullName: string;
+  jobTitle: string;
+}): Promise<void> {
+  return upsertProfile(input);
+}
+
+/**
+ * Activate or create membership for a pre-authorized email (first access).
+ * Does not grant access without an allowlist entry — caller must verify authorization.
+ */
+export async function activateAuthorizedMembership(input: {
+  userId: string;
+  role: WorkspaceRole;
   fullName?: string;
 }): Promise<WorkspaceMembership> {
   const admin = createAdminSupabaseClient();
-  await upsertDemoProfile({
+  await upsertProfile({
     userId: input.userId,
     fullName: input.fullName?.trim() || "EFESO Member",
     jobTitle: input.role === "admin" ? "Administrador" : "Consultor",
   });
+
   const existing = await getActiveEfesoMembership(input.userId);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.role !== input.role) {
+      await admin
+        .from("workspace_memberships")
+        .update({ role: input.role, status: "active", provisioned_reason: "email_allowlist" })
+        .eq("id", existing.id);
+      return { ...existing, role: input.role };
+    }
+    return existing;
+  }
 
   const { data: workspace, error: workspaceError } = await admin
     .from("workspaces")
@@ -83,7 +105,42 @@ export async function provisionEfesoMembership(input: {
   if (workspaceError) throw workspaceError;
   if (!workspace) throw new Error("EFESO workspace is not available.");
 
-  const role = input.role ?? DEFAULT_PROVISIONED_ROLE;
+  const { data: prior } = await admin
+    .from("workspace_memberships")
+    .select("id, workspace_id, user_id, role, status")
+    .eq("workspace_id", workspace.id)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+
+  if (prior) {
+    const { data, error } = await admin
+      .from("workspace_memberships")
+      .update({
+        role: input.role,
+        status: "active",
+        provisioned_reason: "email_allowlist",
+      })
+      .eq("id", prior.id)
+      .select("id, workspace_id, user_id, role, status")
+      .single();
+    if (error) throw error;
+    if (!isWorkspaceRole(data.role)) throw new Error("Provisioned membership has an invalid role.");
+    await recordAccessAudit({
+      eventType: "first_access_activated",
+      outcome: "provisioned",
+      actorUserId: input.userId,
+      workspaceId: workspace.id,
+    });
+    return {
+      id: data.id,
+      workspaceId: data.workspace_id,
+      userId: data.user_id,
+      role: data.role,
+      status: data.status,
+    };
+  }
+
+  const role = input.role || DEFAULT_PROVISIONED_ROLE;
   const { data, error } = await admin
     .from("workspace_memberships")
     .insert({
@@ -91,7 +148,7 @@ export async function provisionEfesoMembership(input: {
       user_id: input.userId,
       role,
       status: "active",
-      provisioned_reason: input.reason,
+      provisioned_reason: "email_allowlist",
     })
     .select("id, workspace_id, user_id, role, status")
     .single();
@@ -102,7 +159,7 @@ export async function provisionEfesoMembership(input: {
   }
 
   await recordAccessAudit({
-    eventType: "membership_provisioned",
+    eventType: "first_access_activated",
     outcome: "provisioned",
     actorUserId: input.userId,
     workspaceId: workspace.id,
@@ -116,4 +173,21 @@ export async function provisionEfesoMembership(input: {
     role: data.role,
     status: data.status,
   };
+}
+
+/**
+ * @deprecated Domain-only provisioning is no longer used for members.
+ * Kept for demo_seed path compatibility via activateAuthorizedMembership / demo bootstrap.
+ */
+export async function provisionEfesoMembership(input: {
+  userId: string;
+  reason: "corporate_domain" | "demo_seed" | "email_allowlist";
+  role?: WorkspaceRole;
+  fullName?: string;
+}): Promise<WorkspaceMembership> {
+  return activateAuthorizedMembership({
+    userId: input.userId,
+    role: input.role ?? DEFAULT_PROVISIONED_ROLE,
+    fullName: input.fullName,
+  });
 }

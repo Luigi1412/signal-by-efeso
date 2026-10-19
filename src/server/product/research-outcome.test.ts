@@ -17,6 +17,12 @@ test("facts_only when claims exist without signals", () => {
   assert.match(researchOutcomeMemberCopy(outcome).body, /não há evidência suficiente para sustentar um sinal/i);
 });
 
+test("signal_found member copy stays non-technical", () => {
+  const copy = researchOutcomeMemberCopy("signal_found");
+  assert.match(copy.body, /evidências públicas/i);
+  assert.doesNotMatch(copy.body, /pipeline|validator|promotion/i);
+});
+
 test("signal_found when active signals exist", () => {
   assert.equal(
     deriveCompanyResearchOutcome({ signalCount: 1, activeClaimCount: 2, runStatus: "completed" }),
