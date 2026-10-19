@@ -26,6 +26,8 @@ const protectedPaths = [
   "/radar",
   "/expertise",
   "/analysis/new",
+  "/research/new",
+  "/account",
 ];
 
 test("login, callback and access-restricted are public", () => {

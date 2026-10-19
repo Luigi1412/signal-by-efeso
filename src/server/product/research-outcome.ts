@@ -54,18 +54,18 @@ export function researchOutcomeMemberCopy(outcome: ResearchOutcome): {
   switch (outcome) {
     case "signal_found":
       return {
-        title: "Movimento identificado",
+        title: "Sinal identificado",
         body: "Há pelo menos um movimento empresarial suficientemente sustentado pelas evidências disponíveis.",
       };
     case "facts_only":
       return {
-        title: "Fatos validados, sem sinal",
-        body: "Informações públicas foram validadas, mas não há um movimento empresarial suficientemente sustentado para gerar um sinal.",
+        title: "Fatos encontrados, sem evidência suficiente para um sinal",
+        body: "Encontramos fatos relevantes, mas ainda não há evidência suficiente para sustentar um sinal.",
       };
     case "insufficient_evidence":
       return {
         title: "Evidência insuficiente",
-        body: "As fontes disponíveis não sustentam um sinal empresarial neste momento.",
+        body: "As informações públicas encontradas ainda são insuficientes para uma conclusão.",
       };
     case "no_reliable_sources":
       return {
@@ -74,13 +74,13 @@ export function researchOutcomeMemberCopy(outcome: ResearchOutcome): {
       };
     case "analysis_partial":
       return {
-        title: "Análise parcial",
-        body: "Parte da análise ficou disponível. Alguns passos não puderam ser concluídos com as condições atuais.",
+        title: "Pesquisa parcial",
+        body: "Parte da pesquisa ficou disponível. Há evidência útil, mesmo sem conclusão completa.",
       };
     case "analysis_failed":
       return {
-        title: "Análise incompleta",
-        body: "A análise não pôde ser concluída. Você pode tentar atualizar mais tarde.",
+        title: "Pesquisa incompleta",
+        body: "A pesquisa não pôde ser concluída. Você pode tentar atualizar mais tarde.",
       };
   }
 }
@@ -93,24 +93,34 @@ export function memberResearchStatusLabel(status: string | null | undefined, out
     case "reviewing_sources":
     case "ingesting_sources":
     case "extracting_claims":
-      return "Análise em andamento";
     case "generating_signals":
     case "generating_intelligence":
     case "generating_opportunities":
     case "generating_actions":
-      return "Enriquecimento em andamento";
+      return "Pesquisa em andamento";
     case "needs_user_resolution":
       return "Confirmação necessária";
     case "completed":
-      if (outcome === "facts_only" || outcome === "insufficient_evidence") return "Concluída sem sinal";
-      return "Análise concluída";
+      if (outcome === "facts_only") return "Fatos encontrados, sem evidência suficiente para um sinal";
+      if (outcome === "insufficient_evidence") return "Evidência insuficiente";
+      if (outcome === "signal_found") return "Sinal identificado";
+      return "Pesquisa concluída";
     case "partial":
-      return "Concluída parcialmente";
+      return "Pesquisa parcial";
     case "failed":
       return "Falha recuperável";
     case "cancelled":
       return "Cancelada";
     default:
-      return "Análise inicial disponível";
+      return "Disponível";
   }
+}
+
+/** Compact list label for the Empresas table. */
+export function memberOutcomeListLabel(outcome: ResearchOutcome | null, runStatus?: string | null): string {
+  if (runStatus && !["completed", "partial", "failed", "cancelled"].includes(runStatus)) {
+    return "Pesquisa em andamento";
+  }
+  if (!outcome) return "—";
+  return researchOutcomeMemberCopy(outcome).title;
 }

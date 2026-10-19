@@ -14,7 +14,7 @@ test("facts_only when claims exist without signals", () => {
     insufficientEvidenceForSignal: true,
   });
   assert.equal(outcome, "facts_only");
-  assert.match(researchOutcomeMemberCopy(outcome).body, /não há um movimento empresarial/i);
+  assert.match(researchOutcomeMemberCopy(outcome).body, /não há evidência suficiente para sustentar um sinal/i);
 });
 
 test("signal_found when active signals exist", () => {
@@ -49,7 +49,10 @@ test("no_reliable_sources maps failure code", () => {
 });
 
 test("member status labels avoid technical jargon", () => {
-  assert.equal(memberResearchStatusLabel("completed", "facts_only"), "Concluída sem sinal");
-  assert.equal(memberResearchStatusLabel("generating_intelligence"), "Enriquecimento em andamento");
+  assert.equal(
+    memberResearchStatusLabel("completed", "facts_only"),
+    "Fatos encontrados, sem evidência suficiente para um sinal",
+  );
+  assert.equal(memberResearchStatusLabel("generating_intelligence"), "Pesquisa em andamento");
   assert.doesNotMatch(memberResearchStatusLabel("failed"), /CLAIMS_NOT_FOUND|pipeline/i);
 });

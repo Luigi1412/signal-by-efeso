@@ -24,7 +24,7 @@ export default async function LoginPage({
       if (data.user?.email) {
         const allowed = getAllowedEmailDomains();
         if (isAllowedCorporateEmail(data.user.email, allowed)) {
-          redirect(routes.home);
+          redirect(routes.companies);
         }
         redirect(routes.accessRestricted);
       }

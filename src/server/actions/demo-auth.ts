@@ -40,7 +40,7 @@ export async function signInWithPassword(input: {
   if (!isAllowedCorporateEmail(email, allowed)) {
     redirect(routes.accessRestricted);
   }
-  redirect(routes.home);
+  redirect(routes.companies);
 }
 
 export async function signInDemo(kind: "member" | "admin" = "member"): Promise<{ error: string } | void> {
@@ -60,7 +60,7 @@ export async function signInDemo(kind: "member" | "admin" = "member"): Promise<{
     return { error: publicAuthError(error) };
   }
 
-  redirect(routes.home);
+  redirect(routes.companies);
 }
 
 export async function signOutAction(): Promise<void> {

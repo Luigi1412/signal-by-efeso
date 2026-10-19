@@ -5,9 +5,12 @@ export const routes = {
   accessRestricted: "/access-restricted",
   home: "/",
   companies: "/companies",
+  account: "/account",
   radar: "/radar",
   expertise: "/expertise",
-  newAnalysis: "/analysis/new",
+  /** @deprecated Prefer `researchNew` — kept for redirects. */
+  newAnalysis: "/research/new",
+  researchNew: "/research/new",
   knowledgeBase: "/knowledge-base",
   efesoKnowledge: "/knowledge/efeso",
   signals: "/signals",
