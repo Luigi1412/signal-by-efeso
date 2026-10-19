@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Building2, Home, Radio, Settings2 } from "lucide-react";
+import { BookOpen, Building2, Home, Settings2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ui } from "@/i18n";
 import { SIGNAL_PRODUCT_VERSION } from "@/lib/product-version";
@@ -14,7 +14,6 @@ import { UserCard } from "./user-card";
 const primaryNav: NavItem[] = [
   { label: ui.nav.home, href: routes.home, icon: Home },
   { label: ui.nav.companies, href: routes.companies, icon: Building2, matchPrefix: true },
-  { label: ui.nav.radar, href: routes.radar, icon: Radio, matchPrefix: true },
   {
     label: ui.nav.knowledgeBase,
     href: routes.expertise,

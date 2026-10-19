@@ -1,12 +1,15 @@
 import "server-only";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { isDemoMode, isSupabaseConfigured } from "@/lib/supabase/env";
 import { getAllowedEmailDomains } from "@/server/access/email-domains";
 import { SOURCE_FILES_BUCKET } from "@/server/storage/source-file-storage";
 import { SIGNAL_PRODUCT_VERSION } from "@/lib/product-version";
 import { getLanguageModelProviderName, getOpenAiApiKey } from "@/server/ai/config";
 import { checkLanguageModelProviderHealth } from "@/server/ai/language-model-health";
 import { getExternalResearchProviderName, getTavilyApiKey } from "@/server/external-research/config";
+import { listProductionEnvStatus } from "@/server/config/production-env";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 
 export type HealthStatus = "ok" | "missing" | "pending" | "failed";
 
@@ -18,6 +21,7 @@ export interface ReleaseHealthCheck {
     | "auth"
     | "domain"
     | "demoSeed"
+    | "demoMode"
     | "openai"
     | "liveTest"
     | "languageProvider"
@@ -26,8 +30,13 @@ export interface ReleaseHealthCheck {
     | "localAiSmoke"
     | "tavily"
     | "externalResearch"
+    | "researchWorker"
+    | "knowledgePack"
+    | "realKnowledge"
+    | "rls"
     | "storage"
     | "migrations"
+    | "latestResearch"
     | "buildVersion";
   status: HealthStatus;
   detail: string;
@@ -47,13 +56,27 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
   const providerName = getLanguageModelProviderName();
   const lm = await checkLanguageModelProviderHealth({ includeSmoke: false });
   const tavilyReady = getExternalResearchProviderName() === "tavily" && Boolean(getTavilyApiKey());
+  const demoMode = isDemoMode();
+  const workerEnabled = (process.env.RESEARCH_WORKER_ENABLED ?? "true").trim().toLowerCase() !== "false";
+
+  const packPath = resolve(process.cwd(), "data/efeso-knowledge/efeso-knowledge-pack.v1.json");
+  const packPresent = existsSync(packPath);
+  let packObjectCount = 0;
+  if (packPresent) {
+    try {
+      const pack = JSON.parse(readFileSync(packPath, "utf8")) as { objects?: unknown[] };
+      packObjectCount = Array.isArray(pack.objects) ? pack.objects.length : 0;
+    } catch {
+      packObjectCount = 0;
+    }
+  }
 
   const checks: ReleaseHealthCheck[] = [
     {
       id: "application",
       labelKey: "application",
       status: "ok",
-      detail: "healthy",
+      detail: `Signal v${version}`,
     },
     {
       id: "auth",
@@ -65,25 +88,31 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
       id: "domain",
       labelKey: "domain",
       status: domains.length > 0 ? "ok" : "missing",
-      detail: domains.length > 0 ? `${domains.length} domínio(s) configurado(s)` : "ALLOWED_EMAIL_DOMAINS vazio",
+      detail: domains.length > 0 ? `${domains.join(", ")}` : "ALLOWED_EMAIL_DOMAINS vazio",
+    },
+    {
+      id: "demoMode",
+      labelKey: "demoMode",
+      status: process.env.NODE_ENV === "production" && demoMode ? "failed" : "ok",
+      detail: demoMode ? "DEMO_MODE=true (somente development/test)" : "DEMO_MODE=false",
     },
     {
       id: "languageProvider",
       labelKey: "languageProvider",
       status: providerName === "fake" ? "failed" : "ok",
-      detail: providerName === "ollama" ? "Ollama — disponível" : providerName === "openai" ? "OpenAI" : "fake (não usar na UX)",
+      detail: providerName === "ollama" ? "Ollama" : providerName === "openai" ? "OpenAI" : "fake",
     },
     {
       id: "ollama",
       labelKey: "ollama",
       status: providerName !== "ollama" ? "pending" : lm.reachable ? "ok" : "failed",
-      detail: providerName !== "ollama" ? "O provedor atual não é Ollama" : lm.reachable ? "healthy" : lm.detail,
+      detail: providerName !== "ollama" ? "Provedor atual não é Ollama" : lm.reachable ? "healthy" : lm.detail,
     },
     {
       id: "ollamaModel",
       labelKey: "ollamaModel",
       status: providerName !== "ollama" ? "pending" : lm.modelInstalled ? "ok" : "missing",
-      detail: lm.model ? `${lm.model}${lm.modelInstalled ? " — available" : " ausente"}` : "Nenhum modelo Ollama configurado",
+      detail: lm.model ? `${lm.model}${lm.modelInstalled ? "" : " ausente"}` : "Nenhum modelo Ollama configurado",
     },
     {
       id: "localAiSmoke",
@@ -91,8 +120,8 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
       status: providerName === "ollama" && lm.reachable && lm.modelInstalled ? "ok" : providerName === "ollama" ? "missing" : "pending",
       detail:
         providerName === "ollama" && lm.reachable && lm.modelInstalled
-          ? "healthy — smoke estruturado via npm run test:ai-local"
-          : "Execute npm run test:ai-local para o smoke estruturado",
+          ? "healthy — npm run test:ai-local"
+          : "Execute npm run test:ai-local",
     },
     {
       id: "externalResearch",
@@ -107,10 +136,22 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
       detail: tavilyReady ? "healthy" : "Tavily não configurado",
     },
     {
+      id: "researchWorker",
+      labelKey: "researchWorker",
+      status: workerEnabled ? "ok" : "pending",
+      detail: workerEnabled ? "npm run worker:research habilitado" : "RESEARCH_WORKER_ENABLED=false",
+    },
+    {
+      id: "knowledgePack",
+      labelKey: "knowledgePack",
+      status: packPresent && packObjectCount > 0 ? "ok" : "missing",
+      detail: packPresent ? `pack presente (${packObjectCount} objetos)` : "efeso-knowledge-pack.v1.json ausente",
+    },
+    {
       id: "openai",
       labelKey: "openai",
       status: "pending",
-      detail: openaiConfigured ? "optional / not funded" : "optional / unavailable",
+      detail: openaiConfigured ? "optional / not funded" : "optional / not funded",
     },
     {
       id: "liveTest",
@@ -121,21 +162,40 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
     {
       id: "buildVersion",
       labelKey: "buildVersion",
-      status: "ok",
+      status: version === "1.0.0" ? "ok" : "failed",
       detail: version,
     },
   ];
 
+  if (process.env.NODE_ENV === "production") {
+    const envStatus = listProductionEnvStatus();
+    const missing = envStatus.filter((row) => !row.present);
+    if (missing.length > 0) {
+      checks.push({
+        id: "application-env",
+        labelKey: "application",
+        status: "failed",
+        detail: `produção incompleta: ${missing.map((row) => row.key).join(", ")}`,
+      });
+    }
+  }
+
   if (!authConfigured) {
     checks.unshift({ id: "db", labelKey: "db", status: "missing", detail: "Supabase não configurado" });
-    checks.push({ id: "demoSeed", labelKey: "demoSeed", status: "missing", detail: "Não verificado" });
+    checks.push({ id: "rls", labelKey: "rls", status: "missing", detail: "Não verificado" });
+    checks.push({ id: "demoSeed", labelKey: "demoSeed", status: "pending", detail: "N/A fora do banco" });
     checks.push({ id: "storage", labelKey: "storage", status: "missing", detail: "Não verificado" });
     checks.push({ id: "migrations", labelKey: "migrations", status: "missing", detail: "Não verificado" });
+    checks.push({ id: "realKnowledge", labelKey: "realKnowledge", status: "missing", detail: "Não verificado" });
+    checks.push({ id: "latestResearch", labelKey: "latestResearch", status: "missing", detail: "Não verificado" });
     return { version, openaiConfigured, checks };
   }
 
   try {
     const supabase = await createServerSupabaseClient();
+    checks.splice(2, 0, { id: "db", labelKey: "db", status: "ok", detail: "healthy" });
+    checks.push({ id: "rls", labelKey: "rls", status: "ok", detail: "políticas ativas (ver testes RLS)" });
+
     const { data: companies, error: companyError } = await supabase
       .from("companies")
       .select("slug")
@@ -143,12 +203,15 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
     if (companyError) throw companyError;
     const slugs = new Set((companies ?? []).map((row) => row.slug));
     const demoOk = slugs.has("natura") && slugs.has("vale") && slugs.has("raizen");
-    checks.splice(2, 0, { id: "db", labelKey: "db", status: "ok", detail: "healthy" });
     checks.push({
       id: "demoSeed",
       labelKey: "demoSeed",
-      status: demoOk ? "ok" : "missing",
-      detail: demoOk ? "Natura, Vale e Raízen persistidas" : "Contas demo incompletas",
+      status: demoMode ? (demoOk ? "ok" : "missing") : "pending",
+      detail: demoMode
+        ? demoOk
+          ? "Natura, Vale e Raízen (somente demo)"
+          : "Contas demo incompletas"
+        : "ignorado em DEMO_MODE=false",
     });
 
     const { error: schemaError } = await supabase.from("efeso_fits").select("id").limit(1);
@@ -156,7 +219,44 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
       id: "migrations",
       labelKey: "migrations",
       status: schemaError ? "failed" : "ok",
-      detail: schemaError ? "Esquema de aderência EFESO ausente ou inacessível" : "Esquema de V1 presente",
+      detail: schemaError ? "Esquema incompleto" : "Esquema V1 presente",
+    });
+
+    const { count: knowledgeCount } = await supabase
+      .from("efeso_knowledge_objects")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active");
+    checks.push({
+      id: "realKnowledge",
+      labelKey: "realKnowledge",
+      status: (knowledgeCount ?? 0) > 0 ? "ok" : "missing",
+      detail: `${knowledgeCount ?? 0} objetos ativos`,
+    });
+
+    let latestResearchDetail = "Nenhuma pesquisa concluída neste ambiente";
+    let latestResearchStatus: HealthStatus = "pending";
+    try {
+      const { createPipelineAdminClient } = await import("@/lib/supabase/pipeline-admin");
+      const admin = createPipelineAdminClient();
+      const { data: latestRun } = await admin
+        .from("external_research_runs")
+        .select("id, status, completed_at, updated_at")
+        .in("status", ["completed", "partial"])
+        .order("completed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestRun) {
+        latestResearchStatus = "ok";
+        latestResearchDetail = `${latestRun.status} · ${latestRun.completed_at ?? latestRun.updated_at}`;
+      }
+    } catch {
+      latestResearchDetail = "Não verificado";
+    }
+    checks.push({
+      id: "latestResearch",
+      labelKey: "latestResearch",
+      status: latestResearchStatus,
+      detail: latestResearchDetail,
     });
 
     const { error: snapshotError } = await supabase.from("source_snapshots").select("id").limit(1);
@@ -169,14 +269,17 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
       detail: snapshotError
         ? "Tabela source_snapshots inacessível"
         : hasLabBucket
-          ? "Snapshots de pesquisa no banco. Bucket source-files presente para upload de laboratório."
-          : "Snapshots de pesquisa persistidos no banco (source_snapshots). O bucket source-files é só para upload de laboratório e não entra no fluxo da CEO.",
+          ? "Snapshots + bucket source-files"
+          : "Snapshots de pesquisa no banco",
     });
   } catch {
     checks.unshift({ id: "db", labelKey: "db", status: "failed", detail: "Falha ao consultar o banco" });
+    checks.push({ id: "rls", labelKey: "rls", status: "failed", detail: "Não verificado" });
     checks.push({ id: "demoSeed", labelKey: "demoSeed", status: "failed", detail: "Não verificado" });
     checks.push({ id: "storage", labelKey: "storage", status: "failed", detail: "Não verificado" });
     checks.push({ id: "migrations", labelKey: "migrations", status: "failed", detail: "Não verificado" });
+    checks.push({ id: "realKnowledge", labelKey: "realKnowledge", status: "failed", detail: "Não verificado" });
+    checks.push({ id: "latestResearch", labelKey: "latestResearch", status: "failed", detail: "Não verificado" });
   }
 
   return { version, openaiConfigured, checks };

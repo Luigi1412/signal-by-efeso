@@ -2,67 +2,57 @@
 
 Inteligência de empresas baseada em evidências, para a EFESO Brasil.
 
-Frontend prototype **v0.1.1** is frozen. This tree includes **v0.2 Sprint 1** — persistence foundation (PostgreSQL + Supabase Auth + RLS). The research engine, LLMs, and intelligence tables are not in this sprint.
+**Versão: 1.0.0** — ver `docs/RELEASE_NOTES_V1.md`.
 
 ## Local setup
 
-Prerequisites: Node 20+ and **Docker Desktop** (or Podman) on `PATH`. The Supabase CLI cannot start the local stack without a container engine. Postgres.app alone is not enough — Signal needs Supabase Auth (`auth.users`) and RLS.
+Prerequisites: Node 20+ e Docker (Supabase local).
 
 ```bash
 cd signal
-cp .env.example .env.local
+cp .env.development.example .env.local
+# preencha chaves locais
 npm install
 npm run supabase:start
 npm run supabase:reset
+npm run import:efeso-knowledge
+npm run seed:demo   # somente development / DEMO_MODE=true
 npm run dev
+```
+
+Em outro terminal (pesquisa independente do browser):
+
+```bash
+npm run worker:research
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Login uses an EFESO corporate email. When `DEMO_AUTH_MODE=true`, local buttons provision synthetic accounts `demo.member@efeso.com` and `demo.admin@efeso.com` (not real people). After `supabase db reset`, run `npm run seed:demo` for the CEO Preview dataset.
+Acesso restrito a `@efeso.com`. Em development com `DEMO_MODE=true` e `DEMO_AUTH_MODE=true`, botões demo provisionam contas sintéticas. Em produção: `DEMO_MODE=false`.
 
-### Environment
+## Produção / self-hosted
 
-See `.env.example`. Never expose `SUPABASE_SERVICE_ROLE_KEY` to the browser. Do not prefix it with `NEXT_PUBLIC_`.
-
-| Variable | Where |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Browser + server |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser + server |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server only (demo bootstrap) |
-| `DEMO_AUTH_MODE` | Server only |
-| `DEMO_AUTH_PASSWORD` | Server only |
-| `ALLOWED_EMAIL_DOMAINS` | Server only (fail closed if empty) |
-
-### Useful commands
+- Checklist de env: `.env.production.example`
+- Deploy: `docs/DEPLOYMENT_V1.md`
+- Operação: `docs/OPERATIONS_RUNBOOK.md`
+- Backup: `docs/BACKUP_RESTORE.md`
+- Compose de referência: `docker-compose.v1.yml`
 
 ```bash
-npm run supabase:start    # local API http://127.0.0.1:54321
-npm run supabase:stop
-npm run supabase:reset    # migrations + seed.sql
-npm run supabase:types    # regenerate src/types/database.ts
-npm run test:rls          # pgTAP cross-workspace smoke test
-npm run typecheck
-npm run lint
 npm run build
+npm run start
+npm run worker:research
+npm run release:check
 ```
 
-Studio (after `supabase:start`): [http://127.0.0.1:54323](http://127.0.0.1:54323)
+## Segurança
 
-If Docker is not installed, `npm run supabase:start` fails. The Next.js UI still runs against mock intelligence, but analysis persistence and demo login require the local stack.
+- Não committe `.env.local` nem `private/efeso-knowledge-sources/`
+- Deploy usa apenas Knowledge Pack curado + metadata aprovada
+- OpenAI permanece optional / not funded
 
-### RLS test
+## Navegação member (v1.0)
 
-Requires local Supabase to be running (`npm run supabase:start`). Then:
+Início · Empresas · Expertise EFESO
 
-```bash
-npm run test:rls
-```
-
-The test lives at `supabase/tests/rls_workspace_isolation.sql`. It creates a synthetic Workspace B inside a rolled-back transaction and asserts that User A (EFESO Brazil) cannot read it.
-
-## What is persisted vs mock
-
-Persisted: workspace, profile, membership, companies, analyses, research runs (including fake research progress).
-
-Still mock: Natura opportunities, evidence, signals, report, versions, capabilities, conflicts.
+Workspace da empresa: Resumo · Oportunidades · Próximos passos · Fontes

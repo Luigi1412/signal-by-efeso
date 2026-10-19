@@ -2,7 +2,8 @@ import "server-only";
 import { requireAuthUserId } from "@/server/session";
 import * as workspaceRepository from "@/server/repositories/workspace-repository";
 import { PersistenceUnavailableError } from "@/server/persistence-error";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { isDemoMode, isSupabaseConfigured } from "@/lib/supabase/env";
+import { routes } from "@/lib/routes";
 import { listCompaniesForWorkspace, listSignalsForWorkspace } from "@/server/signals/persistence";
 import { listActiveOpportunities } from "@/server/opportunities/persistence";
 import { listActiveActions } from "@/server/recommended-actions/persistence";
@@ -100,9 +101,16 @@ export async function getExecutiveDashboard(): Promise<ExecutiveDashboard> {
     if (!intelligenceByCompany.has(row.company_id)) intelligenceByCompany.set(row.company_id, row);
   }
 
-  const activeSignals = signals.filter((row) => row.status === "active");
-  const activeOpportunities = opportunities.filter((row) => row.status === "active");
-  const activeActions = actions.filter((row) => row.status === "active");
+  const allowDemo = isDemoMode();
+  const activeSignals = signals
+    .filter((row) => row.status === "active")
+    .filter((row) => allowDemo || !isDemoOrigin(row.metadata));
+  const activeOpportunities = opportunities
+    .filter((row) => row.status === "active")
+    .filter((row) => allowDemo || !isDemoOrigin(row.metadata));
+  const activeActions = actions
+    .filter((row) => row.status === "active")
+    .filter((row) => allowDemo || !isDemoOrigin(row.metadata));
 
   const highImportanceSignals = activeSignals
     .filter((row) => row.importance === "high")
@@ -119,7 +127,7 @@ export async function getExecutiveDashboard(): Promise<ExecutiveDashboard> {
           companyId: company.id,
           companyName: company.display_name,
           companySlug: company.slug,
-          href: `/companies/${company.slug}/signals?signal=${row.id}`,
+          href: routes.company(company.slug),
           meta: row.event_date,
           demoOrigin: isDemoOrigin(row.metadata),
           updatedAt: row.updated_at,
@@ -142,7 +150,7 @@ export async function getExecutiveDashboard(): Promise<ExecutiveDashboard> {
           companyId: company.id,
           companyName: company.display_name,
           companySlug: company.slug,
-          href: `/opportunities?opportunity=${row.id}`,
+          href: routes.companyTab(company.slug, "opportunities"),
           meta: row.relevance_level,
           demoOrigin: isDemoOrigin(row.metadata),
           updatedAt: row.updated_at,
@@ -164,7 +172,7 @@ export async function getExecutiveDashboard(): Promise<ExecutiveDashboard> {
           companyId: company.id,
           companyName: company.display_name,
           companySlug: company.slug,
-          href: `/companies/${company.slug}/actions`,
+          href: routes.companyTab(company.slug, "actions"),
           meta: row.priority,
           demoOrigin: isDemoOrigin(row.metadata),
           updatedAt: row.updated_at,
@@ -306,6 +314,7 @@ export async function getExecutiveDashboard(): Promise<ExecutiveDashboard> {
   });
 
   const attentionAccounts = [...accounts]
+    .filter((row) => allowDemo || !row.demoOrigin)
     .filter((row) => Boolean(row.latestSignalTitle) || Boolean(row.topOpportunityTitle) || Boolean(row.intelligenceHeadline))
     .sort((left, right) => attentionWeight(right) - attentionWeight(left) || (right.updatedAt ?? "").localeCompare(left.updatedAt ?? ""))
     .slice(0, 5);

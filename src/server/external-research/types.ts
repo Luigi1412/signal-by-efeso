@@ -141,6 +141,9 @@ export interface ExternalResearchRunRow {
   rejected_source_count: number;
   unavailable_source_count: number;
   resolution_payload: Record<string, unknown>;
+  worker_id?: string | null;
+  worker_lock_until?: string | null;
+  worker_heartbeat_at?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

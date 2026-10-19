@@ -46,19 +46,20 @@ export const routes = {
   },
 } as const;
 
+/** Primary member tabs for company workspace (v1.0). Legacy routes remain for compatibility. */
 export const workspaceTabs = [
   "overview",
-  "signals",
-  "intelligence",
   "opportunities",
   "actions",
   "evidence",
 ] as const;
 
+/** Legacy member tabs kept for deep links / redirects — not shown in primary nav. */
+export const legacyWorkspaceTabs = ["signals", "intelligence", "report", "versions"] as const;
+
 export const companyWorkspaceRoutes = [
   ...workspaceTabs,
-  "report",
-  "versions",
+  ...legacyWorkspaceTabs,
 ] as const;
 
 export type WorkspaceTabId = (typeof companyWorkspaceRoutes)[number];

@@ -1,11 +1,13 @@
 {
   "name": "signal",
-  "version": "0.10.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "worker:research": "tsx scripts/research-worker.ts",
+    "user:provision": "tsx scripts/provision-user.ts",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "supabase:start": "npx supabase start",

@@ -116,6 +116,96 @@ export async function countUserRunsSince(workspaceId: string, userId: string, si
   return count ?? 0;
 }
 
+const WORKER_ACTIVE_STATUSES: ExternalResearchStatus[] = [
+  "queued",
+  "resolving_entity",
+  "discovering_sources",
+  "reviewing_sources",
+  "ingesting_sources",
+  "extracting_claims",
+  "generating_signals",
+  "generating_intelligence",
+  "generating_opportunities",
+  "generating_actions",
+];
+
+/** List runs eligible for background worker ticks (lock expired or unset). */
+export async function listEligibleResearchRunsForWorker(limit = 8): Promise<ExternalResearchRunRow[]> {
+  const now = new Date().toISOString();
+  const { data, error } = await db()
+    .from("external_research_runs")
+    .select("*")
+    .in("status", WORKER_ACTIVE_STATUSES)
+    .or(`worker_lock_until.is.null,worker_lock_until.lt.${now}`)
+    .order("updated_at", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as ExternalResearchRunRow[];
+}
+
+/**
+ * Safe DB lock: only one worker owns a run until lock expires.
+ * Returns the row when claimed; null if another worker holds the lock.
+ */
+export async function claimResearchRunForWorker(
+  runId: string,
+  workerId: string,
+  lockMs = 120_000,
+): Promise<ExternalResearchRunRow | null> {
+  const now = new Date();
+  const until = new Date(now.getTime() + lockMs).toISOString();
+  const nowIso = now.toISOString();
+  const { data: current, error: loadError } = await db()
+    .from("external_research_runs")
+    .select("*")
+    .eq("id", runId)
+    .maybeSingle();
+  if (loadError) throw loadError;
+  if (!current) return null;
+  const row = current as ExternalResearchRunRow;
+  if (!WORKER_ACTIVE_STATUSES.includes(row.status)) return null;
+  if (row.worker_lock_until && row.worker_lock_until > nowIso && row.worker_id && row.worker_id !== workerId) {
+    return null;
+  }
+  const { data, error } = await db()
+    .from("external_research_runs")
+    .update({
+      worker_id: workerId,
+      worker_lock_until: until,
+      worker_heartbeat_at: nowIso,
+    })
+    .eq("id", runId)
+    .or(`worker_lock_until.is.null,worker_lock_until.lt.${nowIso},worker_id.eq.${workerId}`)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ExternalResearchRunRow | null) ?? null;
+}
+
+export async function releaseResearchRunWorkerLock(runId: string, workerId: string): Promise<void> {
+  await db()
+    .from("external_research_runs")
+    .update({
+      worker_id: null,
+      worker_lock_until: null,
+      worker_heartbeat_at: new Date().toISOString(),
+    })
+    .eq("id", runId)
+    .eq("worker_id", workerId);
+}
+
+export async function heartbeatResearchRunWorker(runId: string, workerId: string, lockMs = 120_000): Promise<void> {
+  const until = new Date(Date.now() + lockMs).toISOString();
+  await db()
+    .from("external_research_runs")
+    .update({
+      worker_lock_until: until,
+      worker_heartbeat_at: new Date().toISOString(),
+    })
+    .eq("id", runId)
+    .eq("worker_id", workerId);
+}
+
 export async function insertSourceCandidates(
   rows: Array<{
     workspaceId: string;

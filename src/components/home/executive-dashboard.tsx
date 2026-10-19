@@ -13,16 +13,8 @@ const copy = ui.home;
 export function ExecutiveDashboardView({ dashboard }: { dashboard: ExecutiveDashboard }) {
   return (
     <div className="flex flex-col gap-10">
-      <section>
-        <SectionHeading
-          title={copy.highImportanceSignals}
-          actions={
-            <Button asChild variant="ghost" size="sm">
-              <Link href={routes.radar}>{copy.viewRadar}</Link>
-            </Button>
-          }
-          className="mb-4"
-        />
+      <section id="o-que-mudou">
+        <SectionHeading title={copy.highImportanceSignals} className="mb-4" />
         {dashboard.highImportanceSignals.length === 0 ? (
           <p className="text-sm text-muted-foreground">{copy.emptySignals}</p>
         ) : (
@@ -32,9 +24,59 @@ export function ExecutiveDashboardView({ dashboard }: { dashboard: ExecutiveDash
             ))}
           </ul>
         )}
+        {(dashboard.accountsMoving.length > 0 || dashboard.radarThemes.length > 0) && (
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            {dashboard.accountsMoving.length > 0 ? (
+              <div>
+                <h3 className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  {copy.accountsMoving}
+                </h3>
+                <ul className="divide-y rounded-lg border bg-card">
+                  {dashboard.accountsMoving.slice(0, 4).map((item) => (
+                    <li key={item.id}>
+                      <Link href={item.href} className="flex flex-col gap-1 px-4 py-3 hover:bg-muted/40">
+                        <span className="text-sm font-medium">{item.companyName}</span>
+                        <span className="line-clamp-1 text-xs text-muted-foreground">{item.summary}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {dashboard.radarThemes.length > 0 ? (
+              <div>
+                <h3 className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  {ui.radar.themes}
+                </h3>
+                <ul className="divide-y rounded-lg border bg-card">
+                  {dashboard.radarThemes.slice(0, 4).map((theme) => (
+                    <li key={theme.category} className="px-4 py-3 text-sm">
+                      <span className="font-medium">{ui.signals.movement[theme.category]}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {theme.count === 1 ? ui.radar.themeCountOne : `${theme.count} movimentos`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        )}
+        {dashboard.highRelevanceOpportunities.length > 0 ? (
+          <div className="mt-6">
+            <h3 className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {copy.highRelevanceOpportunities}
+            </h3>
+            <ul className="divide-y rounded-lg border bg-card">
+              {dashboard.highRelevanceOpportunities.slice(0, 3).map((item) => (
+                <CompactLink key={item.id} item={item} />
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
-      <section>
+      <section id="empresas-atencao">
         <SectionHeading
           title={copy.accountsAttention}
           actions={
@@ -55,16 +97,8 @@ export function ExecutiveDashboardView({ dashboard }: { dashboard: ExecutiveDash
         )}
       </section>
 
-      <section>
-        <SectionHeading
-          title={copy.priorityActions}
-          actions={
-            <Button asChild variant="ghost" size="sm">
-              <Link href={routes.actions}>{copy.viewActions}</Link>
-            </Button>
-          }
-          className="mb-4"
-        />
+      <section id="proximos-passos">
+        <SectionHeading title={copy.priorityActions} className="mb-4" />
         {dashboard.priorityActions.length === 0 ? (
           <p className="text-sm text-muted-foreground">{copy.emptyActions}</p>
         ) : (

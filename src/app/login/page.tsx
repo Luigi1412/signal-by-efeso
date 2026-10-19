@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/login-form";
 import { Brand } from "@/components/layout/brand";
 import { ui } from "@/i18n";
-import { isDemoAuthMode, isSupabaseConfigured } from "@/lib/supabase/env";
+import { isDemoAuthMode, isDemoMode, isSupabaseConfigured } from "@/lib/supabase/env";
+import { SIGNAL_PRODUCT_VERSION } from "@/lib/product-version";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { routes } from "@/lib/routes";
 import { getAllowedEmailDomains, isAllowedCorporateEmail } from "@/server/access/email-domains";
@@ -58,8 +59,8 @@ export default async function LoginPage({
       </main>
 
       <footer className="flex h-14 items-center justify-between px-6 text-xs text-muted-foreground sm:px-10">
-        <span>{ui.demo.prototypeVersion}</span>
-        <span>{ui.demo.notice}</span>
+        <span>Signal · v{SIGNAL_PRODUCT_VERSION}</span>
+        {isDemoMode() ? <span>{ui.demo.notice}</span> : <span>{ui.login.restricted}</span>}
       </footer>
     </div>
   );

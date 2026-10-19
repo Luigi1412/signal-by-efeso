@@ -10,11 +10,24 @@ export function isSupabaseConfigured(): boolean {
  */
 export function allowMockFallback(): boolean {
   if (process.env.NODE_ENV === "production") return false;
+  if (isDemoMode() === false) return false;
   return process.env.SIGNAL_ALLOW_MOCK_FALLBACK !== "false";
 }
 
-export function isDemoAuthMode(): boolean {
+/**
+ * Explicit product demo switch. Production must set DEMO_MODE=false.
+ * Falls back to DEMO_AUTH_MODE for backwards compatibility in local setups.
+ */
+export function isDemoMode(): boolean {
+  const explicit = process.env.DEMO_MODE?.trim().toLowerCase();
+  if (explicit === "true") return true;
+  if (explicit === "false") return false;
+  if (process.env.NODE_ENV === "production") return false;
   return process.env.DEMO_AUTH_MODE === "true";
+}
+
+export function isDemoAuthMode(): boolean {
+  return isDemoMode() && process.env.DEMO_AUTH_MODE === "true";
 }
 
 export function getSupabaseUrl(): string {
