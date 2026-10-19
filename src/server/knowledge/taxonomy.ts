@@ -1,3 +1,16 @@
+import {
+  CANONICAL_BUSINESS_PROBLEMS,
+  CANONICAL_CAPABILITIES,
+  CANONICAL_INDUSTRIES,
+  CANONICAL_METHODOLOGIES,
+  ENGAGEMENT_STAGES,
+  INDUSTRY_SUBSEGMENTS,
+  LEGACY_INDUSTRY_ALIASES,
+  SERVICE_FAMILIES,
+  SERVICE_FAMILY_ALIASES,
+  TRANSFORMATION_DIMENSIONS,
+} from "./canonical-taxonomy";
+
 export const KNOWLEDGE_OBJECT_TYPES = [
   "capability",
   "methodology",
@@ -17,6 +30,11 @@ export const KNOWLEDGE_TAG_CATEGORIES = [
   "CAPABILITY_DOMAIN",
   "BUSINESS_PROBLEM",
   "GEOGRAPHY",
+  "SERVICE_FAMILY",
+  "METHODOLOGY",
+  "TRANSFORMATION_DIMENSION",
+  "ENGAGEMENT_STAGE",
+  "SUBSEGMENT",
 ] as const;
 
 export type KnowledgeTagCategory = (typeof KNOWLEDGE_TAG_CATEGORIES)[number];
@@ -59,28 +77,24 @@ export const KNOWLEDGE_OBJECT_RELATION_TYPES = [
 export type KnowledgeObjectRelationType = (typeof KNOWLEDGE_OBJECT_RELATION_TYPES)[number];
 
 export const INDUSTRY_TAGS = [
+  ...CANONICAL_INDUSTRIES,
   "Automotive",
   "Aerospace",
-  "Chemicals",
   "Consumer Goods",
   "Energy",
   "Food & Beverage",
-  "Forest & Packaging",
-  "Life Sciences",
   "Manufacturing",
   "Mining & Metals",
   "Oil & Gas",
-  "Retail",
   "Transportation",
   "Utilities",
   "Other",
 ] as const;
 
 export const CAPABILITY_DOMAIN_TAGS = [
-  "Operational Excellence",
+  ...CANONICAL_CAPABILITIES.map((row) => row.name),
   "Supply Chain",
   "Procurement",
-  "Asset Productivity",
   "Maintenance",
   "Quality",
   "Manufacturing",
@@ -91,11 +105,10 @@ export const CAPABILITY_DOMAIN_TAGS = [
   "Organization",
   "Performance Management",
   "Ramp-up",
-  "Cost Reduction",
-  "Working Capital",
 ] as const;
 
 export const BUSINESS_PROBLEM_TAGS = [
+  ...CANONICAL_BUSINESS_PROBLEMS.map((row) => row.name),
   "setup reduction",
   "throughput",
   "productivity",
@@ -113,6 +126,12 @@ export const BUSINESS_PROBLEM_TAGS = [
   "planning",
 ] as const;
 
+export const SERVICE_FAMILY_TAGS = SERVICE_FAMILIES;
+export const METHODOLOGY_TAGS = CANONICAL_METHODOLOGIES.map((row) => row.name);
+export const TRANSFORMATION_DIMENSION_TAGS = TRANSFORMATION_DIMENSIONS;
+export const ENGAGEMENT_STAGE_TAGS = ENGAGEMENT_STAGES;
+export const SUBSEGMENT_TAGS = INDUSTRY_SUBSEGMENTS.map((row) => row.name);
+
 export const GEOGRAPHY_TAGS = [
   "Brazil",
   "Latin America",
@@ -122,49 +141,6 @@ export const GEOGRAPHY_TAGS = [
   "Asia",
   "Other",
 ] as const;
-
-export const TAG_ALIASES: Record<KnowledgeTagCategory, Record<string, string>> = {
-  INDUSTRY: {
-    auto: "Automotive",
-    automotive: "Automotive",
-    "automotive industry": "Automotive",
-    "food and beverage": "Food & Beverage",
-    fmcg: "Consumer Goods",
-    cpgs: "Consumer Goods",
-    mining: "Mining & Metals",
-    metals: "Mining & Metals",
-    pharma: "Life Sciences",
-    "oil and gas": "Oil & Gas",
-  },
-  CAPABILITY_DOMAIN: {
-    opex: "Operational Excellence",
-    "operations excellence": "Operational Excellence",
-    "operational excellence transformation": "Operational Excellence",
-    "supply-chain": "Supply Chain",
-    "asset productivity": "Asset Productivity",
-    "cost reduction": "Cost Reduction",
-    "working capital": "Working Capital",
-    "ramp up": "Ramp-up",
-  },
-  BUSINESS_PROBLEM: {
-    "set-up reduction": "setup reduction",
-    "setup time": "setup reduction",
-    oee: "OEE",
-    "lead-time": "lead time",
-    "service-level": "service level",
-    "ramp up": "ramp-up",
-  },
-  GEOGRAPHY: {
-    brasil: "Brazil",
-    br: "Brazil",
-    "latin america": "Latin America",
-    latam: "Latin America",
-    "south america": "Latin America",
-    worldwide: "Global",
-    global: "Global",
-    eu: "Europe",
-  },
-};
 
 const NAME_NOISE = new Set([
   "methodology",
@@ -199,13 +175,134 @@ export function coreKnowledgeName(value: string): string {
   return tokens.join(" ") || normalizeKnowledgeName(value);
 }
 
+const CAPABILITY_ALIAS_MAP: Record<string, string> = {
+  opex: "Operational Excellence",
+  "operations excellence": "Operational Excellence",
+  "operational excellence transformation": "Operational Excellence",
+  "supply-chain": "Supply Chain Strategy",
+  "asset productivity": "Asset Productivity",
+  "cost reduction": "Cost Reduction",
+  "working capital": "Working Capital",
+  "ramp up": "Ramp-up",
+  maintenance: "Maintenance & Reliability",
+  quality: "Quality Excellence",
+  digital: "Operations AI",
+  organization: "Change Management",
+  transformation: "Transformation PMO",
+  procurement: "Procurement Transformation",
+};
+for (const capability of CANONICAL_CAPABILITIES) {
+  for (const alias of capability.aliases) {
+    CAPABILITY_ALIAS_MAP[normalizeKnowledgeName(alias)] = capability.name;
+  }
+}
+
+const PROBLEM_ALIAS_MAP: Record<string, string> = {
+  "set-up reduction": "excessive setup",
+  "setup time": "excessive setup",
+  "setup reduction": "excessive setup",
+  oee: "low OEE",
+  "lead-time": "order-cycle delays",
+  "lead time": "order-cycle delays",
+  "service-level": "low service level",
+  "service level": "low service level",
+  "ramp up": "ramp-up risk",
+  "ramp-up": "ramp-up risk",
+  capacity: "capacity constraint",
+  maintenance: "asset reliability loss",
+  productivity: "low productivity",
+  throughput: "low productivity",
+  inventory: "excess inventory",
+  reliability: "asset reliability loss",
+  cost: "cost leakage",
+  planning: "disconnected planning",
+  yield: "defects and rework",
+  waste: "defects and rework",
+};
+for (const problem of CANONICAL_BUSINESS_PROBLEMS) {
+  for (const alias of problem.aliases) {
+    PROBLEM_ALIAS_MAP[normalizeKnowledgeName(alias)] = problem.name;
+  }
+}
+
+const INDUSTRY_ALIAS_MAP: Record<string, string> = { ...LEGACY_INDUSTRY_ALIASES };
+
+const SERVICE_FAMILY_ALIAS_MAP: Record<string, string> = { ...SERVICE_FAMILY_ALIASES };
+
+const METHODOLOGY_ALIAS_MAP: Record<string, string> = {};
+for (const method of CANONICAL_METHODOLOGIES) {
+  for (const alias of method.aliases) {
+    METHODOLOGY_ALIAS_MAP[normalizeKnowledgeName(alias)] = method.name;
+  }
+}
+
+export const TAG_ALIASES: Record<KnowledgeTagCategory, Record<string, string>> = {
+  INDUSTRY: INDUSTRY_ALIAS_MAP,
+  CAPABILITY_DOMAIN: CAPABILITY_ALIAS_MAP,
+  BUSINESS_PROBLEM: PROBLEM_ALIAS_MAP,
+  GEOGRAPHY: {
+    brasil: "Brazil",
+    br: "Brazil",
+    "latin america": "Latin America",
+    latam: "Latin America",
+    "south america": "Latin America",
+    worldwide: "Global",
+    global: "Global",
+    eu: "Europe",
+  },
+  SERVICE_FAMILY: SERVICE_FAMILY_ALIAS_MAP,
+  METHODOLOGY: METHODOLOGY_ALIAS_MAP,
+  TRANSFORMATION_DIMENSION: {},
+  ENGAGEMENT_STAGE: {
+    academy: "Academy / Capability Building",
+    "capability building": "Academy / Capability Building",
+  },
+  SUBSEGMENT: {
+    pharmaceutical: "Pharma",
+    "med tech": "MedTech",
+    "pulp & paper": "Pulp and Paper",
+    agro: "Agribusiness",
+  },
+};
+
 export function allCanonicalTags(): { category: KnowledgeTagCategory; canonicalName: string }[] {
   return [
     ...INDUSTRY_TAGS.map((canonicalName) => ({ category: "INDUSTRY" as const, canonicalName })),
     ...CAPABILITY_DOMAIN_TAGS.map((canonicalName) => ({ category: "CAPABILITY_DOMAIN" as const, canonicalName })),
     ...BUSINESS_PROBLEM_TAGS.map((canonicalName) => ({ category: "BUSINESS_PROBLEM" as const, canonicalName })),
     ...GEOGRAPHY_TAGS.map((canonicalName) => ({ category: "GEOGRAPHY" as const, canonicalName })),
+    ...SERVICE_FAMILY_TAGS.map((canonicalName) => ({ category: "SERVICE_FAMILY" as const, canonicalName })),
+    ...METHODOLOGY_TAGS.map((canonicalName) => ({ category: "METHODOLOGY" as const, canonicalName })),
+    ...TRANSFORMATION_DIMENSION_TAGS.map((canonicalName) => ({
+      category: "TRANSFORMATION_DIMENSION" as const,
+      canonicalName,
+    })),
+    ...ENGAGEMENT_STAGE_TAGS.map((canonicalName) => ({ category: "ENGAGEMENT_STAGE" as const, canonicalName })),
+    ...SUBSEGMENT_TAGS.map((canonicalName) => ({ category: "SUBSEGMENT" as const, canonicalName })),
   ];
+}
+
+function canonicalListFor(category: KnowledgeTagCategory): readonly string[] {
+  switch (category) {
+    case "INDUSTRY":
+      return INDUSTRY_TAGS;
+    case "CAPABILITY_DOMAIN":
+      return CAPABILITY_DOMAIN_TAGS;
+    case "BUSINESS_PROBLEM":
+      return BUSINESS_PROBLEM_TAGS;
+    case "GEOGRAPHY":
+      return GEOGRAPHY_TAGS;
+    case "SERVICE_FAMILY":
+      return SERVICE_FAMILY_TAGS;
+    case "METHODOLOGY":
+      return METHODOLOGY_TAGS;
+    case "TRANSFORMATION_DIMENSION":
+      return TRANSFORMATION_DIMENSION_TAGS;
+    case "ENGAGEMENT_STAGE":
+      return ENGAGEMENT_STAGE_TAGS;
+    case "SUBSEGMENT":
+      return SUBSEGMENT_TAGS;
+  }
 }
 
 export function mapSuggestedTag(
@@ -216,16 +313,13 @@ export function mapSuggestedTag(
   const typed = category as KnowledgeTagCategory;
   const normalized = normalizeKnowledgeName(suggestedName);
   const aliasTarget = TAG_ALIASES[typed][normalized];
-  const canonicalList =
-    typed === "INDUSTRY"
-      ? INDUSTRY_TAGS
-      : typed === "CAPABILITY_DOMAIN"
-        ? CAPABILITY_DOMAIN_TAGS
-        : typed === "BUSINESS_PROBLEM"
-          ? BUSINESS_PROBLEM_TAGS
-          : GEOGRAPHY_TAGS;
-  const direct = canonicalList.find((name) => normalizeKnowledgeName(name) === normalized);
+  const direct = canonicalListFor(typed).find((name) => normalizeKnowledgeName(name) === normalized);
   const canonicalName = aliasTarget ?? direct ?? null;
   if (!canonicalName) return { ok: false };
   return { ok: true, category: typed, canonicalName };
+}
+
+export function canonicalizeTagName(category: string, name: string): string {
+  const mapped = mapSuggestedTag(category, name);
+  return mapped.ok ? mapped.canonicalName : name;
 }

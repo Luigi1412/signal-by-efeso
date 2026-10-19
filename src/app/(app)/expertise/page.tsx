@@ -7,7 +7,7 @@ import { KNOWLEDGE_OBJECT_STATUSES, KNOWLEDGE_OBJECT_TYPES } from "@/server/know
 import { EmptyState } from "@/components/shared/empty-state";
 import { requireEfesoAccess } from "@/server/access/require-efeso-access";
 import { isPersistenceUnavailable } from "@/server/persistence-error";
-import { EXPERTISE_CATEGORIES } from "@/lib/knowledge-display";
+import { EXPERTISE_SECTIONS, isExpertiseSectionId, matchesExpertiseSection } from "@/lib/knowledge-display";
 
 export const metadata: Metadata = { title: ui.efesoKnowledge.title };
 export const dynamic = "force-dynamic";
@@ -35,6 +35,7 @@ export default async function ExpertisePage({
     status: first(query.status) || "active",
   };
   const objectId = first(query.object);
+  const section = isExpertiseSectionId(first(query.section)) ? first(query.section) : "";
   const objectType = KNOWLEDGE_OBJECT_TYPES.includes(filters.objectType as never) ? filters.objectType : null;
   const status = KNOWLEDGE_OBJECT_STATUSES.includes(filters.status as never) ? filters.status : "active";
 
@@ -56,7 +57,7 @@ export default async function ExpertisePage({
       businessProblem: filters.businessProblem || null,
       geography: filters.geography || null,
       status,
-      limit: 50,
+      limit: 400,
     };
     const [filtered, catalog, taxonomyResult, selectedResult] = await Promise.all([
       searchEfesoKnowledge({ ...shared, objectType }),
@@ -64,11 +65,20 @@ export default async function ExpertisePage({
       listTaxonomyOptions(),
       objectId ? getEfesoKnowledgeObject(objectId) : Promise.resolve(null),
     ]);
-    items = filtered;
+    items = objectType
+      ? filtered
+      : section
+        ? catalog.filter((item) => matchesExpertiseSection({ catalogSection: item.catalogSection ?? null, objectType: item.objectType }, section))
+        : filtered;
     taxonomy = taxonomyResult;
     selected = selectedResult;
     categoryCounts = Object.fromEntries(
-      EXPERTISE_CATEGORIES.map((type) => [type, catalog.filter((item) => item.objectType === type).length]),
+      EXPERTISE_SECTIONS.map((row) => [
+        row.id,
+        catalog.filter((item) =>
+          matchesExpertiseSection({ catalogSection: item.catalogSection ?? null, objectType: item.objectType }, row.id),
+        ).length,
+      ]),
     );
   } catch (error) {
     if (!isPersistenceUnavailable(error)) throw error;
@@ -86,7 +96,7 @@ export default async function ExpertisePage({
           selected={selected}
           taxonomy={taxonomy}
           categoryCounts={categoryCounts}
-          filters={{ ...filters, objectType: objectType ?? "", status }}
+          filters={{ ...filters, objectType: objectType ?? "", status, section }}
         />
       )}
     </PageContainer>

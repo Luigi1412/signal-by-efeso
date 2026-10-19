@@ -1,4 +1,5 @@
-import { mapSuggestedTag, normalizeKnowledgeName } from "./taxonomy";
+import { knowledgeOrigin } from "./governance";
+import { canonicalizeTagName, mapSuggestedTag, normalizeKnowledgeName } from "./taxonomy";
 
 export interface KnowledgeSearchRecord {
   id: string;
@@ -10,6 +11,10 @@ export interface KnowledgeSearchRecord {
   aliases: string[];
   tags: { category: string; canonicalName: string }[];
   demoOrigin?: boolean;
+  origin?: string | null;
+  catalogSection?: string | null;
+  approvedForDisplay?: boolean;
+  visibilityLevel?: string;
 }
 
 export interface KnowledgeSearchFilters {
@@ -39,7 +44,17 @@ export interface RelevantKnowledgeContext {
 }
 
 function hasTag(record: KnowledgeSearchRecord, category: string, canonicalName: string): boolean {
-  return record.tags.some((tag) => tag.category === category && tag.canonicalName === canonicalName);
+  return record.tags.some(
+    (tag) => tag.category === category && canonicalizeTagName(category, tag.canonicalName) === canonicalName,
+  );
+}
+
+function originRank(record: KnowledgeSearchRecord): number {
+  const origin = record.origin ?? (record.demoOrigin ? "demo_seed" : knowledgeOrigin({ origin: record.origin }) ?? "curated_internal");
+  if (origin === "public_official") return 0;
+  if (origin === "curated_internal") return 1;
+  if (origin === "restricted_internal") return 2;
+  return 3;
 }
 
 function mappedTag(category: string, value: string | null | undefined): string | null {
@@ -59,7 +74,7 @@ export function rankKnowledgeSearch(
   const capability = mappedTag("CAPABILITY_DOMAIN", filters.capability);
   const problem = mappedTag("BUSINESS_PROBLEM", filters.businessProblem);
   const geography = mappedTag("GEOGRAPHY", filters.geography);
-  const limit = filters.limit && filters.limit > 0 ? Math.min(filters.limit, 100) : 50;
+  const limit = filters.limit && filters.limit > 0 ? Math.min(filters.limit, 400) : 50;
 
   const hits: RankedKnowledgeHit[] = [];
   for (const record of records) {
@@ -104,7 +119,12 @@ export function rankKnowledgeSearch(
     hits.push({ record, rank, matchedBecause });
   }
 
-  hits.sort((a, b) => a.rank - b.rank || a.record.canonicalName.localeCompare(b.record.canonicalName));
+  hits.sort(
+    (a, b) =>
+      originRank(a.record) - originRank(b.record) ||
+      a.rank - b.rank ||
+      a.record.canonicalName.localeCompare(b.record.canonicalName),
+  );
   return hits.slice(0, limit);
 }
 
@@ -164,6 +184,11 @@ export function matchRelevantKnowledge(
       matchedBecause: [...new Set(matchedBecause)],
     });
   }
-  hits.sort((a, b) => a.rank - b.rank || a.record.canonicalName.localeCompare(b.record.canonicalName));
+  hits.sort(
+    (a, b) =>
+      originRank(a.record) - originRank(b.record) ||
+      a.rank - b.rank ||
+      a.record.canonicalName.localeCompare(b.record.canonicalName),
+  );
   return hits;
 }

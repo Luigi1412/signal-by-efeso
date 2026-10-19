@@ -87,11 +87,21 @@ export function RelevantEfesoKnowledge({ fits, companySlug }: RelevantEfesoKnowl
                   ))}
                 </ul>
               </div>
-              {selected.relatedCases.length > 0 ? (
+              {selected.relatedProblems.length > 0 ? (
                 <div>
-                  <p className="font-medium">{copy.relatedCases}</p>
+                  <p className="font-medium">{copy.relatedProblems}</p>
                   <ul className="mt-2 list-disc pl-4">
-                    {selected.relatedCases.map((item) => (
+                    {selected.relatedProblems.map((item) => (
+                      <li key={item.id}>{item.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {selected.relatedCapabilities.length > 0 ? (
+                <div>
+                  <p className="font-medium">{copy.relatedCapabilities}</p>
+                  <ul className="mt-2 list-disc pl-4">
+                    {selected.relatedCapabilities.map((item) => (
                       <li key={item.id}>{item.name}</li>
                     ))}
                   </ul>
@@ -107,9 +117,37 @@ export function RelevantEfesoKnowledge({ fits, companySlug }: RelevantEfesoKnowl
                   </ul>
                 </div>
               ) : null}
-              <p className="text-xs text-muted-foreground">
-                Efeso Fit → KnowledgeObject → Claim/Evidence → Source
-              </p>
+              {selected.relatedIndustries.length > 0 ? (
+                <div>
+                  <p className="font-medium">{copy.relatedIndustries}</p>
+                  <ul className="mt-2 list-disc pl-4">
+                    {selected.relatedIndustries.map((item) => (
+                      <li key={item.id}>{item.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {selected.relatedCases.length > 0 ? (
+                <div>
+                  <p className="font-medium">{copy.relatedCases}</p>
+                  <ul className="mt-2 list-disc pl-4">
+                    {selected.relatedCases.map((item) => (
+                      <li key={item.id}>{item.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {selected.relatedResults.length > 0 ? (
+                <div>
+                  <p className="font-medium">{copy.relatedResults}</p>
+                  <ul className="mt-2 list-disc pl-4">
+                    {selected.relatedResults.map((item) => (
+                      <li key={item.id}>{item.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <p className="text-xs text-muted-foreground">{copy.noMagicScore}</p>
             </div>
           ) : null}
         </SheetContent>

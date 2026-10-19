@@ -51,6 +51,13 @@ test("ranking prefers exact canonical, then alias, then tag, then text", () => {
   assert.equal(exact[0]?.record.id, "1");
 });
 
+test("curated knowledge ranks ahead of demo seed", () => {
+  const demo: KnowledgeSearchRecord = { ...asset, id: "demo", demoOrigin: true, origin: "demo_seed", canonicalName: "Asset Productivity Demo" };
+  const real: KnowledgeSearchRecord = { ...asset, id: "real", origin: "curated_internal", canonicalName: "Asset Productivity" };
+  const hits = rankKnowledgeSearch([demo, real], { query: "Asset Productivity" });
+  assert.equal(hits[0]?.record.id, "real");
+});
+
 test("relevant knowledge returns deterministic match reasons without pitch language", () => {
   const hits = matchRelevantKnowledge([asset, draftBoost], {
     industries: ["Automotive"],
@@ -61,7 +68,7 @@ test("relevant knowledge returns deterministic match reasons without pitch langu
   assert.equal(hits.length, 1);
   assert.equal(hits[0]?.record.canonicalName, "Asset Productivity");
   assert.ok(hits[0]?.matchedBecause.includes("capability_domain:Asset Productivity"));
-  assert.ok(hits[0]?.matchedBecause.includes("business_problem:maintenance"));
+  assert.ok(hits[0]?.matchedBecause.includes("business_problem:asset reliability loss"));
   assert.equal(
     hits[0]?.matchedBecause.some((reason) => /pitch|should|recommend/i.test(reason)),
     false,

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { t, ui } from "@/i18n";
-import { EXPERTISE_CATEGORIES, knowledgeStatusLabel, knowledgeTagCategoryLabel, knowledgeTypeLabel } from "@/lib/knowledge-display";
+import { EXPERTISE_SECTIONS, knowledgeStatusLabel, knowledgeTagCategoryLabel, knowledgeTypeLabel } from "@/lib/knowledge-display";
 import { routes } from "@/lib/routes";
 import type { EfesoKnowledgeDetail, EfesoKnowledgeListItem } from "@/types/efeso-knowledge";
 
@@ -45,6 +45,7 @@ interface Filters {
   businessProblem: string;
   geography: string;
   status: string;
+  section?: string;
 }
 
 interface EfesoKnowledgeExplorerProps {
@@ -66,27 +67,31 @@ export function EfesoKnowledgeExplorer({ items, selected, taxonomy, filters, cat
       <section>
         <h2 className="mb-4 text-lg font-semibold tracking-tight">{copy.browse}</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {EXPERTISE_CATEGORIES.map((type) => {
-            const count = categoryCounts[type] ?? items.filter((item) => item.objectType === type).length;
-            const active = filters.objectType === type;
-            const params = keepFilters({ ...filters, objectType: active ? "" : type });
+          {EXPERTISE_SECTIONS.map((section) => {
+            const count =
+              categoryCounts[section.id] ??
+              items.filter((item) => item.catalogSection === section.id || section.objectTypes.includes(item.objectType as never)).length;
+            const active = filters.section === section.id;
+            const params = keepFilters({ ...filters, objectType: "", section: active ? "" : section.id });
             return (
               <a
-                key={type}
+                key={section.id}
                 href={params ? `${routes.expertise}?${params}` : routes.expertise}
                 className={`rounded-lg border bg-card px-4 py-4 transition-colors hover:border-foreground/20 ${active ? "border-foreground/30" : ""}`}
               >
-                <p className="text-sm font-semibold">{copy.categories[type]}</p>
+                <p className="text-sm font-semibold">{copy.sections[section.id]}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{count}</p>
               </a>
             );
           })}
         </div>
+        <p className="mt-3 text-xs text-muted-foreground">{copy.waitingForSources}</p>
       </section>
 
       <details className="rounded-lg border bg-card p-4" open={hasSecondaryFilters}>
         <summary className="cursor-pointer text-sm font-medium">{copy.filters}</summary>
         <form method="get" action={routes.expertise} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {filters.section ? <input type="hidden" name="section" value={filters.section} /> : null}
           <div className="grid gap-2 lg:col-span-2">
             <Label htmlFor="q">{copy.query}</Label>
             <Input id="q" name="q" defaultValue={filters.query} />
@@ -152,6 +157,7 @@ function keepFilters(filters: Filters, objectId?: string): string {
   if (filters.businessProblem) params.set("problem", filters.businessProblem);
   if (filters.geography) params.set("geography", filters.geography);
   if (filters.status && filters.status !== "active") params.set("status", filters.status);
+  if (filters.section) params.set("section", filters.section);
   if (objectId) params.set("object", objectId);
   return params.toString();
 }
@@ -258,37 +264,25 @@ function KnowledgeObjectDrawer({
               </ul>
             </section>
           ) : null}
-          <details>
-            <summary className="cursor-pointer text-sm font-medium">{ui.common.viewProvenance}</summary>
-            <div className="mt-3 flex flex-col gap-4">
-              <section>
-                <h3 className="eyebrow mb-2">{copy.claims}</h3>
-                {detail.claims.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">—</p>
-                ) : (
-                  <ul className="space-y-2 text-sm">
-                    {detail.claims.map((claim) => (
-                      <li key={`${claim.id}-${claim.relationshipType}`}>{claim.statement}</li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-              <section>
-                <h3 className="eyebrow mb-2">{copy.provenance}</h3>
-                <dl className="grid gap-2 text-sm">
-                  <div>
-                    {copy.snapshot}: <span className="font-mono text-xs">{detail.provenance.snapshotId}</span>
-                  </div>
-                  <div>
-                    {copy.candidate}: <span className="font-mono text-xs">{detail.provenance.candidateId ?? "—"}</span>
-                  </div>
-                  <div>
-                    {copy.modelRun}: <span className="font-mono text-xs">{detail.provenance.modelRunId ?? "—"}</span>
-                  </div>
-                </dl>
-              </section>
-            </div>
-          </details>
+          {detail.showProvenance ? (
+            <details>
+              <summary className="cursor-pointer text-sm font-medium">{ui.common.viewProvenance}</summary>
+              <div className="mt-3 flex flex-col gap-4">
+                <section>
+                  <h3 className="eyebrow mb-2">{copy.claims}</h3>
+                  {detail.claims.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">—</p>
+                  ) : (
+                    <ul className="space-y-2 text-sm">
+                      {detail.claims.map((claim) => (
+                        <li key={`${claim.id}-${claim.relationshipType}`}>{claim.statement}</li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </div>
+            </details>
+          ) : null}
         </div>
       </SheetContent>
     </Sheet>

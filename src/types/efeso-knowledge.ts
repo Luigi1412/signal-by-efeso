@@ -51,6 +51,8 @@ export interface EfesoKnowledgeListItem {
   matchedBecause: string[];
   tags: { category: string; canonicalName: string }[];
   demoOrigin?: boolean;
+  catalogSection?: string | null;
+  origin?: string | null;
 }
 
 export interface EfesoKnowledgeDetail {
@@ -90,6 +92,9 @@ export interface EfesoKnowledgeDetail {
     validations: { validatorCode: string; result: string; message: string | null }[];
   };
   demoOrigin?: boolean;
+  catalogSection?: string | null;
+  origin?: string | null;
+  showProvenance?: boolean;
 }
 
 export interface RelevantEfesoKnowledgeHit {

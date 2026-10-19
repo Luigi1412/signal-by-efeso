@@ -44,3 +44,7 @@ supabase/.branches
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Sprint 10.6 — private EFESO source files (never commit)
+private/efeso-knowledge-sources/
+private/efeso-knowledge-sources/**

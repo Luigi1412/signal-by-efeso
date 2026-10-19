@@ -1,4 +1,7 @@
 import { SIGNAL_TYPE_TAG_HINTS, mapCompanyIndustryToTag, type FitLevel } from "./taxonomy";
+import { canonicalizeTagName } from "@/server/knowledge/taxonomy";
+import { GENERIC_CAPABILITY_NAMES } from "@/server/knowledge/canonical-taxonomy";
+import { sanitizeMemberExplanation } from "@/server/knowledge/governance";
 import type {
   AccountSignalInput,
   FitComponentDraft,
@@ -12,17 +15,27 @@ function cap(value: number, max: number): number {
 }
 
 function tagNames(knowledge: FitDerivationInput["knowledge"], category: string): string[] {
-  return knowledge.tags.filter((tag) => tag.category === category).map((tag) => tag.canonicalName);
+  return knowledge.tags
+    .filter((tag) => tag.category === category)
+    .map((tag) => canonicalizeTagName(category, tag.canonicalName));
 }
 
 function signalTypeHints(signals: AccountSignalInput[]): { category: string; canonicalName: string; signalId: string }[] {
   const out: { category: string; canonicalName: string; signalId: string }[] = [];
   for (const signal of signals) {
     for (const hint of SIGNAL_TYPE_TAG_HINTS[signal.signalType] ?? []) {
-      out.push({ ...hint, signalId: signal.id });
+      out.push({
+        category: hint.category,
+        canonicalName: canonicalizeTagName(hint.category, hint.canonicalName),
+        signalId: signal.id,
+      });
     }
     for (const tag of signal.tags) {
-      out.push({ category: tag.category, canonicalName: tag.canonicalName, signalId: signal.id });
+      out.push({
+        category: tag.category,
+        canonicalName: canonicalizeTagName(tag.category, tag.canonicalName),
+        signalId: signal.id,
+      });
     }
   }
   return out;
@@ -125,7 +138,11 @@ export function deriveEfesoFit(input: FitDerivationInput): FitDerivationResult {
   }
 
   const themeHits = input.themes.filter((theme) =>
-    knowledgeTags.some((tag) => tag.category === theme.category && tag.canonicalName === theme.canonicalName),
+    knowledgeTags.some(
+      (tag) =>
+        tag.category === theme.category &&
+        canonicalizeTagName(tag.category, tag.canonicalName) === canonicalizeTagName(theme.category, theme.canonicalName),
+    ),
   );
   if (themeHits.length > 0) {
     const contribution = cap(themeHits.reduce((sum, theme) => sum + Math.min(theme.signalCount, 2), 0), 2);
@@ -224,12 +241,33 @@ export function deriveEfesoFit(input: FitDerivationInput): FitDerivationResult {
     });
   }
 
+  const nature = input.knowledge.knowledgeNature;
+  const proposedOrExpected =
+    nature === "proposed_scope" || nature === "expected_benefit" || nature === "historical_benchmark" || nature === "commercial_claim";
   const credentialOrResult = input.knowledge.relatedObjects.filter(
     (row) => row.objectType === "credential" || row.objectType === "result" || row.relationType === "produces_result",
   );
-  if ((input.knowledge.objectType === "credential" || input.knowledge.objectType === "result" || credentialOrResult.length > 0) && capabilityScore > 0) {
+  const deliveredResult =
+    !proposedOrExpected &&
+    (input.knowledge.objectType === "result" ||
+      input.knowledge.outcomeStatus === "delivered" ||
+      input.knowledge.outcomeStatus === "independently_verified");
+  if (deliveredResult && capabilityScore > 0 && input.knowledge.objectType === "result") {
     components.push({
-      componentType: input.knowledge.objectType === "result" ? "result_relevance" : "credential_relevance",
+      componentType: "result_relevance",
+      componentValue: input.knowledge.canonicalName,
+      contribution: 1,
+      explanation: "Delivered result supports the overlapping capability.",
+      sourceType: "knowledge_object",
+      sourceId: input.knowledge.id,
+    });
+  } else if (
+    (input.knowledge.objectType === "credential" || credentialOrResult.length > 0) &&
+    capabilityScore > 0 &&
+    !proposedOrExpected
+  ) {
+    components.push({
+      componentType: "credential_relevance",
       componentValue: input.knowledge.canonicalName,
       contribution: 1,
       explanation: "Credential or result object supports the overlapping capability.",
@@ -240,14 +278,45 @@ export function deriveEfesoFit(input: FitDerivationInput): FitDerivationResult {
 
   const scored = components.filter((row) => row.contribution > 0);
   const fitScore = scored.reduce((sum, row) => sum + row.contribution, 0);
-  const fitLevel = mapFitScoreToLevel(fitScore);
+  let fitLevel = mapFitScoreToLevel(fitScore);
+  const hasProblem = scored.some((row) => row.componentType === "business_problem_match");
+  const hasCapability = scored.some((row) => row.componentType === "capability_match");
+  const hasCaseOrResult = scored.some(
+    (row) => row.componentType === "case_relevance" || row.componentType === "result_relevance",
+  );
+  const onlyIndustryOrGeo = scored.every(
+    (row) => row.componentType === "industry_match" || row.componentType === "geography_match",
+  );
+  const genericCapabilityOnly =
+    hasCapability &&
+    !hasProblem &&
+    !hasCaseOrResult &&
+    GENERIC_CAPABILITY_NAMES.some((name) => canonicalizeTagName("CAPABILITY_DOMAIN", input.knowledge.canonicalName) === name);
+  if (onlyIndustryOrGeo || genericCapabilityOnly) {
+    if (fitLevel === "high") fitLevel = "medium";
+  }
+
+  const sanitized = scored.map((row) => ({
+    ...row,
+    explanation: sanitizeMemberExplanation({
+      explanation: row.explanation,
+      visibilityLevel: input.knowledge.visibilityLevel ?? "efeso_member",
+      confidentialityLevel: input.knowledge.confidentialityLevel ?? "internal",
+    }),
+  }));
   const rationale =
-    scored.length === 0
+    sanitized.length === 0
       ? "Não há sobreposição taxonômica suficiente entre esta conta e o conhecimento EFESO disponível."
-      : `Justificativa: ${scored.map((row) => `${humanFitComponent(row.componentType)} — ${row.componentValue}`).join("; ")}.`;
+      : `Justificativa: ${sanitized.map((row) => `${humanFitComponent(row.componentType)} — ${row.componentValue}`).join("; ")}.`;
 
   const uniqueMatches = dedupeMatches(matches);
-  return { fitLevel, fitScore, components: scored.length ? scored : components.filter((row) => row.contribution === 0).slice(0, 1), matches: uniqueMatches, rationale };
+  return {
+    fitLevel,
+    fitScore,
+    components: sanitized.length ? sanitized : components.filter((row) => row.contribution === 0).slice(0, 1),
+    matches: uniqueMatches,
+    rationale,
+  };
 }
 
 function humanFitComponent(componentType: string): string {
