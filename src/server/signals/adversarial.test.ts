@@ -368,6 +368,23 @@ test("commercial language is a blocking schema failure", () => {
   assert.equal(records.find((row) => row.validatorCode === "schema_validity")?.result, "fail");
 });
 
+test("optional null geography/period warnings do not block promotion when grounding passes", () => {
+  const semantic = signalSemanticOutputToRecords(
+    passSemantic({
+      geography: { result: "warn", reason: "geography is null" },
+      period: { result: "warn", reason: "period is null" },
+    }),
+    "run-1",
+  );
+  const decision = decideSignalCandidateStatus({
+    hasPrimaryClaim: true,
+    companyResolved: true,
+    signalType: "production_ramp_up",
+    validations: semantic,
+  });
+  assert.equal(decision.status, "validated");
+});
+
 test("type other requires review even with passing grounding", () => {
   const records = runSignalDeterministicValidators(
     context({

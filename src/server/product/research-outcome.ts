@@ -24,7 +24,9 @@ export function deriveCompanyResearchOutcome(input: {
   const status = input.runStatus ?? null;
   const code = input.failureCode ?? null;
 
-  if (status === "failed" || code === "PIPELINE_VALIDATION_FAILED") {
+  // Hard failure only when the run itself failed. Stale failure_code on partial/completed
+  // must not hide promoted signals (late enrichment infra errors finish as partial).
+  if (status === "failed") {
     if (code === "NO_RELIABLE_SOURCES" || code === "SOURCE_FETCH_FAILED") return "no_reliable_sources";
     if (code === "TAVILY_AUTH_FAILED" || code === "TAVILY_TIMEOUT" || code === "LOCAL_MODEL_UNAVAILABLE") {
       return "analysis_failed";
@@ -32,9 +34,9 @@ export function deriveCompanyResearchOutcome(input: {
     return "analysis_failed";
   }
 
-  if (status === "partial") return "analysis_partial";
-
   if (input.signalCount > 0) return "signal_found";
+
+  if (status === "partial") return "analysis_partial";
 
   if (input.activeClaimCount > 0 || input.insufficientEvidenceForSignal) {
     return "facts_only";

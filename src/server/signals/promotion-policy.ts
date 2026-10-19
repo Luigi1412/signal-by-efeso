@@ -56,7 +56,19 @@ export function decideSignalCandidateStatus(input: {
     };
   }
 
-  const reviewWarn = input.validations.find((row) => row.result === "warn" && row.severity === "review");
+  // Optional absences (null geography/period/magnitude) must not alone block auto-promotion when
+  // Claims also omit them. Contradiction and other review warnings still require human review.
+  const optionalAbsenceCodes = new Set(["geography", "period", "magnitude"]);
+  const reviewWarn = input.validations.find((row) => {
+    if (row.result !== "warn" || row.severity !== "review") return false;
+    if (
+      optionalAbsenceCodes.has(row.validatorCode) &&
+      /null|not asserted|absent|missing|no geography|no period|no magnitude/i.test(row.message ?? "")
+    ) {
+      return false;
+    }
+    return true;
+  });
   if (reviewWarn) {
     return {
       status: "needs_review",

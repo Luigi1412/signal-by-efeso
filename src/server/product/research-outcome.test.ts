@@ -24,6 +24,18 @@ test("signal_found when active signals exist", () => {
   );
 });
 
+test("signal_found wins on partial even with stale pipeline failure code", () => {
+  assert.equal(
+    deriveCompanyResearchOutcome({
+      signalCount: 2,
+      activeClaimCount: 4,
+      runStatus: "partial",
+      failureCode: "PIPELINE_VALIDATION_FAILED",
+    }),
+    "signal_found",
+  );
+});
+
 test("no_reliable_sources maps failure code", () => {
   assert.equal(
     deriveCompanyResearchOutcome({
