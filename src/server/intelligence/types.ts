@@ -104,6 +104,12 @@ export interface KnowledgeFitTarget {
   shortDescription: string | null;
   tags: { tagId: string; category: string; canonicalName: string }[];
   relatedObjects: { id: string; objectType: string; canonicalName: string; relationType: string }[];
+  visibilityLevel?: string;
+  confidentialityLevel?: string;
+  knowledgeNature?: string;
+  outcomeStatus?: string;
+  approvedForMatching?: boolean;
+  origin?: string | null;
 }
 
 export interface FitDerivationInput {
@@ -205,6 +211,10 @@ export interface EfesoFitView {
   relatedSignals: { id: string; title: string; matchType: string; matchStrength: string }[];
   relatedCases: { id: string; name: string }[];
   relatedMethodologies: { id: string; name: string }[];
+  relatedProblems: { id: string; name: string }[];
+  relatedCapabilities: { id: string; name: string }[];
+  relatedIndustries: { id: string; name: string }[];
+  relatedResults: { id: string; name: string }[];
 }
 
 export interface EfesoFitCandidateView {

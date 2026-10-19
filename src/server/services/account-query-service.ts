@@ -30,6 +30,7 @@ import type {
 } from "@/server/intelligence/types";
 import { getKnowledgeObject, listActiveKnowledgeObjects } from "@/server/knowledge/persistence";
 import { getSignal, listCompaniesForWorkspace, listSignalsForWorkspace } from "@/server/signals/persistence";
+import { sanitizeMemberExplanation } from "@/server/knowledge/governance";
 import { loadKnowledgeFitTarget } from "./efeso-fit-service";
 
 function isDemoOrigin(metadata: unknown): boolean {
@@ -328,7 +329,11 @@ async function hydrateFit(
       componentType: row.component_type as FitComponentDraft["componentType"],
       componentValue: row.component_value,
       contribution: row.contribution,
-      explanation: row.explanation,
+      explanation: sanitizeMemberExplanation({
+        explanation: row.explanation,
+        visibilityLevel: knowledge?.visibility_level ?? "efeso_member",
+        confidentialityLevel: knowledge?.confidentiality_level ?? "internal",
+      }),
       sourceType: row.source_type as FitComponentDraft["sourceType"],
       sourceId: row.source_id,
     })),
@@ -338,6 +343,18 @@ async function hydrateFit(
       .map((row) => ({ id: row.id, name: row.canonicalName })),
     relatedMethodologies: (target?.relatedObjects ?? [])
       .filter((row) => row.objectType === "methodology")
+      .map((row) => ({ id: row.id, name: row.canonicalName })),
+    relatedProblems: (target?.tags ?? [])
+      .filter((tag) => tag.category === "BUSINESS_PROBLEM")
+      .map((tag) => ({ id: tag.tagId, name: tag.canonicalName })),
+    relatedCapabilities: (target?.tags ?? [])
+      .filter((tag) => tag.category === "CAPABILITY_DOMAIN")
+      .map((tag) => ({ id: tag.tagId, name: tag.canonicalName })),
+    relatedIndustries: (target?.tags ?? [])
+      .filter((tag) => tag.category === "INDUSTRY")
+      .map((tag) => ({ id: tag.tagId, name: tag.canonicalName })),
+    relatedResults: (target?.relatedObjects ?? [])
+      .filter((row) => row.objectType === "result")
       .map((row) => ({ id: row.id, name: row.canonicalName })),
   };
 }

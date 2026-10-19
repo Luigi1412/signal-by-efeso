@@ -41,6 +41,6 @@ test("Asset Productivity and Production Productivity remain distinct", () => {
 test("industry aliases map to the closed catalog", () => {
   const mapped = mapSuggestedTag("INDUSTRY", "mining");
   assert.equal(mapped.ok, true);
-  if (mapped.ok) assert.equal(mapped.canonicalName, "Mining & Metals");
+  if (mapped.ok) assert.equal(mapped.canonicalName, "Mining, Metals and Minerals");
   assert.equal(normalizeKnowledgeName("Food & Beverage"), "food and beverage");
 });

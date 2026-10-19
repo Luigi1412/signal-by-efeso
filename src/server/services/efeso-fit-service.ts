@@ -106,6 +106,12 @@ export async function loadKnowledgeFitTarget(workspaceId: string, objectId: stri
     shortDescription: object.short_description,
     tags: tags.map(nestedTag).filter((row): row is NonNullable<typeof row> => Boolean(row)),
     relatedObjects: related,
+    visibilityLevel: object.visibility_level ?? "efeso_member",
+    confidentialityLevel: object.confidentiality_level ?? "internal",
+    knowledgeNature: object.knowledge_nature ?? "institutional_fact",
+    outcomeStatus: object.outcome_status ?? "not_applicable",
+    approvedForMatching: object.approved_for_matching ?? true,
+    origin: typeof object.metadata?.origin === "string" ? object.metadata.origin : null,
   };
 }
 
@@ -150,11 +156,19 @@ export async function runEfesoFitForCompany(input: {
 
   const themes = deriveAccountThemes(signals);
   const objects = await listActiveKnowledgeObjects(workspace.id);
+  const hasRealKnowledge = objects.some(
+    (object) => object.status === "active" && (object.metadata as { origin?: string } | null)?.origin !== "demo_seed",
+  );
+  const matchingObjects = objects.filter((object) => {
+    if (object.status !== "active") return false;
+    if (object.approved_for_matching === false) return false;
+    if (hasRealKnowledge && (object.metadata as { origin?: string } | null)?.origin === "demo_seed") return false;
+    return true;
+  });
   const usedFake = Boolean(input.useFakeProvider) && !input.provider;
-  const provider = input.provider ?? (usedFake ? createLabFakeFitProvider(objects.length) : getLanguageModelProvider());
+  const provider = input.provider ?? (usedFake ? createLabFakeFitProvider(matchingObjects.length) : getLanguageModelProvider());
 
-  for (const object of objects) {
-    if (object.status !== "active") continue;
+  for (const object of matchingObjects) {
     const target = await loadKnowledgeFitTarget(workspace.id, object.id);
     if (!target) continue;
     const derivation = deriveEfesoFit({

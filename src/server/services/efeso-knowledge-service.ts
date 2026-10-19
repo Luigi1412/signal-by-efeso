@@ -4,6 +4,8 @@ import * as workspaceRepository from "@/server/repositories/workspace-repository
 import { requireAuthUserId } from "@/server/session";
 import { PersistenceUnavailableError } from "@/server/persistence-error";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { requireEfesoAccess, requireEfesoAdmin } from "@/server/access/require-efeso-access";
+import { isMemberVisibleKnowledge, knowledgeOrigin } from "@/server/knowledge/governance";
 import {
   getKnowledgeObject,
   listAliasesForObject,
@@ -16,6 +18,7 @@ import {
   listObjectRelations,
   listObjectTags,
   listTags,
+  updateKnowledgeGovernance,
 } from "@/server/knowledge/persistence";
 import {
   matchRelevantKnowledge,
@@ -38,7 +41,22 @@ function tagName(row: {
   return { category: nested.category, canonicalName: nested.canonical_name };
 }
 
-async function loadSearchRecords(workspaceId: string): Promise<KnowledgeSearchRecord[]> {
+function catalogSectionOf(object: {
+  object_type: string;
+  metadata: Record<string, unknown>;
+}): string | null {
+  const fromMeta = object.metadata?.catalog_section;
+  if (typeof fromMeta === "string") return fromMeta;
+  if (object.object_type === "capability" || object.object_type === "service") return "what_we_do";
+  if (object.object_type === "methodology") return "how_we_work";
+  if (object.object_type === "industry_expertise") return "industries";
+  if (object.object_type === "case" || object.object_type === "result") return "cases_and_results";
+  if (object.object_type === "credential" || object.object_type === "testimonial") return "credentials";
+  if (object.object_type === "concept") return "problems_we_solve";
+  return null;
+}
+
+async function loadSearchRecords(workspaceId: string, memberView: boolean): Promise<KnowledgeSearchRecord[]> {
   const [objects, aliases, catalog] = await Promise.all([
     listKnowledgeObjectsForWorkspace(workspaceId),
     listAliasesForWorkspace(workspaceId),
@@ -53,6 +71,18 @@ async function loadSearchRecords(workspaceId: string): Promise<KnowledgeSearchRe
   }
   const records: KnowledgeSearchRecord[] = [];
   for (const object of objects) {
+    if (
+      memberView &&
+      !isMemberVisibleKnowledge({
+        visibilityLevel: object.visibility_level ?? "efeso_member",
+        confidentialityLevel: object.confidentiality_level ?? "internal",
+        approvedForDisplay: object.approved_for_display ?? true,
+        commercialTermsPresent: object.commercial_terms_present ?? false,
+        knowledgeNature: object.knowledge_nature ?? "institutional_fact",
+      })
+    ) {
+      continue;
+    }
     const tagRows = await listObjectTags(object.id);
     records.push({
       id: object.id,
@@ -64,6 +94,10 @@ async function loadSearchRecords(workspaceId: string): Promise<KnowledgeSearchRe
       aliases: aliasesByObject.get(object.id) ?? [],
       tags: tagRows.map(tagName).filter((tag): tag is { category: string; canonicalName: string } => Boolean(tag)),
       demoOrigin: isDemoOrigin(object.metadata),
+      origin: knowledgeOrigin(object.metadata),
+      catalogSection: catalogSectionOf(object),
+      approvedForDisplay: object.approved_for_display ?? true,
+      visibilityLevel: object.visibility_level ?? "efeso_member",
     });
   }
   return records;
@@ -77,11 +111,11 @@ function isDemoOrigin(metadata: unknown): boolean {
 export async function searchEfesoKnowledge(
   filters: KnowledgeSearchFilters,
 ): Promise<EfesoKnowledgeListItem[]> {
-  await requireAuthUserId();
+  await requireEfesoAccess();
   if (!isSupabaseConfigured()) throw new PersistenceUnavailableError();
   const workspace = await workspaceRepository.getCurrentWorkspace();
   if (!workspace) throw new PersistenceUnavailableError();
-  const records = await loadSearchRecords(workspace.id);
+  const records = await loadSearchRecords(workspace.id, true);
   return rankKnowledgeSearch(records, filters).map((hit) => ({
     id: hit.record.id,
     canonicalName: hit.record.canonicalName,
@@ -92,6 +126,8 @@ export async function searchEfesoKnowledge(
     matchedBecause: hit.matchedBecause,
     tags: hit.record.tags,
     demoOrigin: hit.record.demoOrigin,
+    catalogSection: hit.record.catalogSection,
+    origin: hit.record.origin,
   }));
 }
 
@@ -102,11 +138,12 @@ export async function getRelevantEfesoKnowledge(
   if (!isSupabaseConfigured()) throw new PersistenceUnavailableError();
   const workspace = await workspaceRepository.getCurrentWorkspace();
   if (!workspace) throw new PersistenceUnavailableError();
-  const records = await loadSearchRecords(workspace.id);
+  const access = await requireEfesoAccess();
+  const records = await loadSearchRecords(workspace.id, !access.isAdmin);
   const hits = matchRelevantKnowledge(records, context);
   const results: RelevantEfesoKnowledgeHit[] = [];
   for (const hit of hits) {
-    const detail = await assembleDetail(workspace.id, hit.record.id);
+    const detail = await assembleDetail(workspace.id, hit.record.id, access.isAdmin);
     if (!detail || detail.status !== "active") continue;
     results.push({
       knowledgeObject: {
@@ -124,16 +161,28 @@ export async function getRelevantEfesoKnowledge(
 }
 
 export async function getEfesoKnowledgeObject(id: string): Promise<EfesoKnowledgeDetail | null> {
-  await requireAuthUserId();
+  await requireEfesoAccess();
   if (!isSupabaseConfigured()) throw new PersistenceUnavailableError();
   const workspace = await workspaceRepository.getCurrentWorkspace();
   if (!workspace) throw new PersistenceUnavailableError();
-  return assembleDetail(workspace.id, id);
+  return assembleDetail(workspace.id, id, false);
 }
 
-async function assembleDetail(workspaceId: string, id: string): Promise<EfesoKnowledgeDetail | null> {
+async function assembleDetail(workspaceId: string, id: string, isAdmin: boolean): Promise<EfesoKnowledgeDetail | null> {
   const object = await getKnowledgeObject(workspaceId, id);
   if (!object) return null;
+  if (
+    !isAdmin &&
+    !isMemberVisibleKnowledge({
+      visibilityLevel: object.visibility_level ?? "efeso_member",
+      confidentialityLevel: object.confidentiality_level ?? "internal",
+      approvedForDisplay: object.approved_for_display ?? true,
+      commercialTermsPresent: object.commercial_terms_present ?? false,
+      knowledgeNature: object.knowledge_nature ?? "institutional_fact",
+    })
+  ) {
+    return null;
+  }
   const [aliases, tagRows, relations, claimLinks] = await Promise.all([
     listAliasesForObject(object.id),
     listObjectTags(object.id),
@@ -190,14 +239,19 @@ async function assembleDetail(workspaceId: string, id: string): Promise<EfesoKno
       statement: claimById.get(row.claim_id) ?? row.claim_id,
       relationshipType: row.relationship_type,
     })),
-    evidence,
-    provenance: {
-      snapshotId: object.source_snapshot_id,
-      candidateId: object.origin_candidate_id,
-      modelRunId: object.origin_model_run_id,
-      validations,
-    },
+    evidence: isAdmin ? evidence : evidence.map((row) => ({ ...row, snapshotId: "", blockId: "" })),
+    provenance: isAdmin
+      ? {
+          snapshotId: object.source_snapshot_id,
+          candidateId: object.origin_candidate_id,
+          modelRunId: object.origin_model_run_id,
+          validations,
+        }
+      : { snapshotId: "", candidateId: null, modelRunId: null, validations: [] },
     demoOrigin: isDemoOrigin(object.metadata),
+    catalogSection: catalogSectionOf(object),
+    origin: knowledgeOrigin(object.metadata),
+    showProvenance: isAdmin,
   };
 }
 
@@ -211,4 +265,43 @@ export async function listTaxonomyOptions() {
     problems: tags.filter((tag) => tag.category === "BUSINESS_PROBLEM").map((tag) => tag.canonical_name),
     geographies: tags.filter((tag) => tag.category === "GEOGRAPHY").map((tag) => tag.canonical_name),
   };
+}
+
+export async function listKnowledgeGovernanceCatalog() {
+  await requireEfesoAdmin();
+  if (!isSupabaseConfigured()) throw new PersistenceUnavailableError();
+  const workspace = await workspaceRepository.getCurrentWorkspace();
+  if (!workspace) throw new PersistenceUnavailableError();
+  const objects = await listKnowledgeObjectsForWorkspace(workspace.id);
+  return objects.map((object) => ({
+    id: object.id,
+    canonicalName: object.canonical_name,
+    objectType: object.object_type,
+    status: object.status,
+    visibilityLevel: object.visibility_level ?? "efeso_member",
+    confidentialityLevel: object.confidentiality_level ?? "internal",
+    knowledgeNature: object.knowledge_nature ?? "institutional_fact",
+    outcomeStatus: object.outcome_status ?? "not_applicable",
+    approvedForMatching: object.approved_for_matching ?? true,
+    approvedForDisplay: object.approved_for_display ?? true,
+    sourceDocumentType: object.source_document_type ?? null,
+    origin: knowledgeOrigin(object.metadata),
+    catalogSection: catalogSectionOf(object),
+  }));
+}
+
+export async function reviewKnowledgeObject(input: {
+  id: string;
+  action: "approve" | "archive";
+}) {
+  const access = await requireEfesoAccess();
+  if (!access.isAdmin) throw new Error("FORBIDDEN");
+  if (!isSupabaseConfigured()) throw new PersistenceUnavailableError();
+  await updateKnowledgeGovernance({
+    workspaceId: access.workspaceId,
+    id: input.id,
+    status: input.action === "archive" ? "archived" : "active",
+    approvedForDisplay: input.action === "approve" ? true : undefined,
+    approvedForMatching: input.action === "approve" ? true : undefined,
+  });
 }

@@ -47,6 +47,18 @@ export interface KnowledgeObjectRow {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  stable_key?: string | null;
+  visibility_level?: string;
+  confidentiality_level?: string;
+  knowledge_nature?: string;
+  outcome_status?: string;
+  source_document_type?: string | null;
+  client_attribution?: string;
+  approved_for_matching?: boolean;
+  approved_for_display?: boolean;
+  commercial_terms_present?: boolean;
+  effective_from?: string | null;
+  effective_to?: string | null;
 }
 
 export interface KnowledgeObjectAliasRow {
@@ -356,6 +368,26 @@ export async function listObjectRelations(objectId: string) {
     relation_type: string;
     status: string;
   }>(data);
+}
+
+export async function updateKnowledgeGovernance(input: {
+  workspaceId: string;
+  id: string;
+  status?: "active" | "archived" | "needs_review";
+  approvedForMatching?: boolean;
+  approvedForDisplay?: boolean;
+  visibilityLevel?: string;
+  confidentialityLevel?: string;
+}): Promise<void> {
+  const patch: Record<string, unknown> = {};
+  if (input.status) patch.status = input.status;
+  if (input.approvedForMatching !== undefined) patch.approved_for_matching = input.approvedForMatching;
+  if (input.approvedForDisplay !== undefined) patch.approved_for_display = input.approvedForDisplay;
+  if (input.visibilityLevel) patch.visibility_level = input.visibilityLevel;
+  if (input.confidentialityLevel) patch.confidentiality_level = input.confidentialityLevel;
+  if (Object.keys(patch).length === 0) return;
+  const { error } = await admin().from("efeso_knowledge_objects").update(patch).eq("workspace_id", input.workspaceId).eq("id", input.id);
+  if (error) throw error;
 }
 
 export async function listObjectClaims(objectId: string) {

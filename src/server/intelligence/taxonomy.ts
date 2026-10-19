@@ -196,17 +196,24 @@ export const SIGNAL_TYPE_SECTION: Partial<Record<string, AccountIntelligenceSect
 export function mapCompanyIndustryToTag(industry: string | null | undefined): string | null {
   const value = (industry ?? "").toLowerCase();
   if (!value) return null;
-  if (value.includes("minera") || value.includes("mining") || value.includes("metal")) return "Mining & Metals";
-  if (value.includes("consumo") || value.includes("beleza") || value.includes("consumer") || value.includes("beauty")) {
-    return "Consumer Goods";
-  }
-  if (value.includes("energia") || value.includes("energy") || value.includes("agroneg") || value.includes("oil")) {
-    return "Energy";
-  }
-  if (value.includes("auto")) return "Automotive";
-  if (value.includes("food") || value.includes("alimento")) return "Food & Beverage";
-  if (value.includes("chemical") || value.includes("quimic")) return "Chemicals";
-  return null;
+  const hint = value.includes("minera") || value.includes("mining") || value.includes("metal")
+    ? "Mining, Metals and Minerals"
+    : value.includes("consumo") || value.includes("beleza") || value.includes("consumer") || value.includes("beauty")
+      ? "Consumer Goods and Luxury"
+      : value.includes("energia") || value.includes("energy") || value.includes("agroneg") || value.includes("oil")
+        ? "Oil & Gas and Sustainable Energy"
+        : value.includes("auto")
+          ? "Automotive and Commercial Vehicles"
+          : value.includes("food") || value.includes("alimento")
+            ? "Food and Beverage"
+            : value.includes("chemical") || value.includes("quimic")
+              ? "Chemicals"
+              : value.includes("life") || value.includes("pharma")
+                ? "Life Sciences"
+                : value.includes("forest") || value.includes("papel") || value.includes("pulp")
+                  ? "Forest & Packaging"
+                  : null;
+  return hint;
 }
 
 export function isOfferingObjectType(objectType: string): boolean {
