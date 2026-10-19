@@ -37,7 +37,8 @@ export class TavilyExternalResearchProvider implements ExternalResearchProvider 
 
   constructor(options: TavilyProviderOptions = {}) {
     this.officialDomain = options.officialDomain ?? null;
-    this.apiKey = options.apiKey ?? getTavilyApiKey();
+    // Explicit null must win over env (tests / fail-closed callers).
+    this.apiKey = options.apiKey !== undefined ? options.apiKey : getTavilyApiKey();
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.sleep = options.sleep ?? defaultSleep;
     this.timeoutMs = options.timeoutMs ?? getExternalResearchLimits().fetchTimeoutMs;
