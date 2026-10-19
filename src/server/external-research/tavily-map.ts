@@ -82,10 +82,13 @@ export function classifySource(
   if (/annual[- ]?report|relatorio-anual|20-f|10-k/.test(haystack)) {
     return { sourceType: "annual_report", sourceTier: official ? 1 : 3 };
   }
+  if (/deliver(y|ies)|aircraft delivered|backlog|production (ramp|level|nivel)/.test(haystack)) {
+    return { sourceType: "press_release", sourceTier: official ? 1 : 3 };
+  }
   if (/earnings|quarterly[- ]?result|resultados|q[1-4]-20/.test(haystack)) {
     return { sourceType: "earnings_release", sourceTier: official ? 1 : 3 };
   }
-  if (/press[- ]?release|newsroom|sala-de-imprensa|comunicado/.test(haystack)) {
+  if (/press[- ]?release|newsroom|media-center|sala-de-imprensa|comunicado/.test(haystack)) {
     return { sourceType: "press_release", sourceTier: official ? 1 : 3 };
   }
   if (/investor|relations|\/ir\/|ri\./.test(haystack)) {

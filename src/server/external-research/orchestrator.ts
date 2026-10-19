@@ -1,7 +1,11 @@
 import "server-only";
 import { isIntelligenceGenerationConfigured, getLanguageModelProviderName } from "@/server/ai/config";
 import { getLanguageModelProvider } from "@/server/ai/get-provider";
-import { ModelProviderUnavailableError } from "@/server/ai/errors";
+import {
+  ModelIncompleteResponseError,
+  ModelProviderUnavailableError,
+  ModelRefusalError,
+} from "@/server/ai/errors";
 import { executeControlledExtraction } from "@/server/services/controlled-intelligence-extraction-service";
 import { executeSignalExtraction } from "@/server/services/signal-extraction-service";
 import { runAccountIntelligenceForCompany } from "@/server/services/account-intelligence-service";
@@ -162,6 +166,48 @@ export async function tickExternalCompanyResearch(workspaceId: string, runId: st
     }
   } catch (error) {
     const code = failureCode(error);
+    const detail = errorDetail(error);
+    // Transient local-model failures after claims exist must not erase a recoverable run.
+    if (isRecoverableModelError(error) && run.resolved_company_id && run.analysis_id) {
+      const claims = await listActiveMetricClaims(workspaceId, run.resolved_company_id);
+      if (claims.length > 0) {
+        await insertResearchEvent({
+          workspaceId,
+          researchRunId: runId,
+          eventType: "pipeline_note",
+          payload: {
+            code: "MODEL_PROVIDER_TRANSIENT",
+            failureCode: code,
+            detail: detail.slice(0, 240),
+          },
+        });
+        await finishPartial(run, code === "LOCAL_MODEL_UNAVAILABLE" ? "LOCAL_MODEL_UNAVAILABLE" : "OPENAI_FAILED", publicFailureMessage(code), run.unavailable_source_count);
+        return (await getResearchRun(workspaceId, runId)) ?? run;
+      }
+    }
+    // PostgREST/RPC plain objects during late phases must not discard an otherwise complete research run.
+    if (run.resolved_company_id && run.analysis_id && isInfrastructureObjectError(error)) {
+      const claims = await listClaimsForSignalExtraction({
+        workspaceId,
+        companyId: run.resolved_company_id,
+        analysisId: run.analysis_id,
+      });
+      if (claims.length > 0) {
+        await insertResearchEvent({
+          workspaceId,
+          researchRunId: runId,
+          eventType: "pipeline_note",
+          payload: { code: "LATE_PHASE_INFRA_ERROR", detail: detail.slice(0, 240) },
+        });
+        await finishPartial(run, "OPENAI_FAILED", "Pesquisa concluída com limitações no enriquecimento final.", run.unavailable_source_count);
+        // Prefer a soft partial without a hard-fail code so promoted signals remain visible.
+        await updateResearchRun(workspaceId, runId, {
+          failure_code: null,
+          failure_reason: "Pesquisa concluída com limitações no enriquecimento final.",
+        });
+        return (await getResearchRun(workspaceId, runId)) ?? run;
+      }
+    }
     const message = publicFailureMessage(code);
     const updated = await updateResearchRun(workspaceId, runId, {
       status: "failed",
@@ -173,7 +219,10 @@ export async function tickExternalCompanyResearch(workspaceId: string, runId: st
       workspaceId,
       researchRunId: runId,
       eventType: "run_failed",
-      payload: { code },
+      payload: {
+        code,
+        detail: detail.slice(0, 240),
+      },
     });
     if (run.research_run_id) await completeLegacyResearchRun(workspaceId, run.research_run_id, true);
     return updated;
@@ -229,7 +278,14 @@ export async function resumeExternalResearch(workspaceId: string, runId: string,
   const run = await getResearchRun(workspaceId, runId);
   if (!run) throw new Error("RUN_NOT_FOUND");
   if (!isTerminalStatus(run.status) || run.status === "needs_user_resolution") return run;
-  if (run.status === "completed") return run;
+  if (run.status === "completed") {
+    // Allow resume when signal validation was interrupted after the run was marked complete.
+    if (!run.analysis_id) return run;
+    const pendingSignals = (await listSignalCandidatesForAnalysis(run.analysis_id)).some(
+      (row) => row.status === "pending_validation",
+    );
+    if (!pendingSignals) return run;
+  }
   if (!run.analysis_id || !run.resolved_company_id) throw new Error("RUN_NOT_RESUMABLE");
   await failStaleRunningModelRuns(run.analysis_id);
   const nextStatus = await inferResumeStatus(run);
@@ -258,6 +314,19 @@ async function inferResumeStatus(run: ExternalResearchRunRow): Promise<ExternalR
   if (!run.analysis_id) return "extracting_claims";
   const candidates = await listCandidatesForAnalysis(run.analysis_id);
   if (candidates.some((row) => row.status === "pending_validation")) return "extracting_claims";
+  const signalCandidates = await listSignalCandidatesForAnalysis(run.analysis_id);
+  if (
+    signalCandidates.some(
+      (row) =>
+        row.status === "pending_validation" ||
+        (row.status === "needs_review" &&
+          (row.rejection_reason_code === "geography" ||
+            row.rejection_reason_code === "period" ||
+            row.rejection_reason_code === "magnitude")),
+    )
+  ) {
+    return "generating_signals";
+  }
   return "generating_signals";
 }
 
@@ -532,7 +601,9 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
   await failStaleRunningModelRuns(run.analysis_id);
   const provider = getLanguageModelProvider();
   const limits = getExternalResearchLimits();
-  const extractLimit = getLanguageModelProviderName() === "ollama" ? 1 : limits.initialAcceptedSourceLimit;
+  // Local models still extract from every initially accepted/fetched snapshot — capping at 1
+  // left high-value operational sources unused after discovery already paid for them.
+  const extractLimit = limits.initialAcceptedSourceLimit;
   const companies = await listWorkspaceCompanies(run.workspace_id);
   const companyName = companies.find((row) => row.id === run.resolved_company_id)?.display_name ?? run.requested_query;
   const rows = (await listSourceCandidates(run.id))
@@ -543,6 +614,8 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
         urlSubstanceScore(left.canonical_url || left.url, left.title),
     );
   let extracted = 0;
+  let extractionFailures = 0;
+  let extractionSucceeded = false;
   const extractionArgs = (row: ExternalSourceCandidateRow, blocks: Awaited<ReturnType<typeof listBlocksForSnapshot>>) => ({
     workspaceId: run.workspace_id,
     analysisId: run.analysis_id as string,
@@ -598,7 +671,21 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
     if (blocks.length === 0) continue;
     try {
       await executeControlledExtraction(extractionArgs(row, blocks));
+      extractionSucceeded = true;
+      await persistPartialCounts(run);
+      const promotedClaims = await listClaimsForSignalExtraction({
+        workspaceId: run.workspace_id,
+        companyId: run.resolved_company_id,
+        analysisId: run.analysis_id,
+      });
+      if (promotedClaims.length === 0) {
+        // Hollow/nav pages can "succeed" with zero promoted claims — keep trying richer snapshots.
+        continue;
+      }
+      await maybeGenerateFirstUsefulIntelligence(run);
+      break;
     } catch (error) {
+      extractionFailures += 1;
       await insertResearchEvent({
         workspaceId: run.workspace_id,
         researchRunId: run.id,
@@ -609,10 +696,9 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
           detail: error instanceof Error ? error.message.slice(0, 240) : "unknown",
         },
       });
+      // Do not abandon remaining fetched sources after a model/provider failure on one snapshot.
+      continue;
     }
-    await persistPartialCounts(run);
-    await maybeGenerateFirstUsefulIntelligence(run);
-    break;
   }
   const claims = await listActiveMetricClaims(run.workspace_id, run.resolved_company_id);
   const conflicts = detectPotentialClaimConflicts(
@@ -633,6 +719,15 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
   if (remaining.length > 0) {
     return (await getResearchRun(run.workspace_id, run.id)) ?? run;
   }
+  if (!extractionSucceeded && extractionFailures > 0) {
+    await finishPartial(
+      run,
+      getLanguageModelProviderName() === "ollama" ? "LOCAL_MODEL_UNAVAILABLE" : "OPENAI_FAILED",
+      getLanguageModelProviderName() === "ollama" ? LOCAL_MODEL_MESSAGE : OPENAI_PARTIAL_MESSAGE,
+      run.unavailable_source_count,
+    );
+    return (await getResearchRun(run.workspace_id, run.id)) ?? run;
+  }
   return (await transitionRun(run.workspace_id, run.id, "extracting_claims", { status: "generating_signals" })) ?? run;
 }
 
@@ -642,8 +737,23 @@ async function phaseSignals(run: ExternalResearchRunRow): Promise<ExternalResear
   const latest = (await getResearchRun(run.workspace_id, run.id)) ?? run;
   const gate = await progressiveGate(latest);
   const existingSignals = await listSignalCandidatesForAnalysis(latest.analysis_id as string);
+  const pendingSignals = existingSignals.filter((row) => row.status === "pending_validation");
+  const optionalAbsenceReview = existingSignals.some(
+    (row) =>
+      row.status === "needs_review" &&
+      (row.rejection_reason_code === "geography" ||
+        row.rejection_reason_code === "period" ||
+        row.rejection_reason_code === "magnitude"),
+  );
   const previousHash = typeof latest.resolution_payload.signals_claim_hash === "string" ? latest.resolution_payload.signals_claim_hash : null;
-  if (existingSignals.length === 0 || previousHash !== gate.claimHash) {
+  const claimSetUnchanged = previousHash === gate.claimHash;
+  // Resume interrupted validation without forcing a fresh model extraction when claims did not change.
+  const pendingOnly =
+    claimSetUnchanged &&
+    existingSignals.length > 0 &&
+    (pendingSignals.length > 0 || optionalAbsenceReview);
+  // Re-run when claim set changed, no candidates yet, or validation was interrupted mid-flight.
+  if (existingSignals.length === 0 || !claimSetUnchanged || pendingSignals.length > 0 || optionalAbsenceReview) {
     try {
       const summary = await executeSignalExtraction({
         workspaceId: run.workspace_id,
@@ -652,12 +762,28 @@ async function phaseSignals(run: ExternalResearchRunRow): Promise<ExternalResear
         researchRunId: run.research_run_id,
         provider: getLanguageModelProvider(),
         usedFakeProvider: false,
+        pendingOnly,
         promote: (id) => promoteViaPipelineAdmin("promote_signal_candidate", id),
       });
       await recordSignalOutcome(run, gate.claimHash, summary.promotedCount);
     } catch (error) {
-      if (!isSkipablePipelineGap(error)) throw error;
-      await recordSignalOutcome(run, gate.claimHash, 0);
+      if (isRecoverableModelError(error)) {
+        await insertResearchEvent({
+          workspaceId: run.workspace_id,
+          researchRunId: run.id,
+          eventType: "pipeline_note",
+          payload: {
+            code: "MODEL_PROVIDER_TRANSIENT",
+            phase: "generating_signals",
+            detail: error instanceof Error ? error.message.slice(0, 240) : "unknown",
+          },
+        });
+        await recordSignalOutcome(run, gate.claimHash, 0);
+      } else if (!isSkipablePipelineGap(error)) {
+        throw error;
+      } else {
+        await recordSignalOutcome(run, gate.claimHash, 0);
+      }
     }
   }
   await persistPartialCounts(run);
@@ -736,8 +862,27 @@ async function phaseActions(run: ExternalResearchRunRow): Promise<ExternalResear
       promote: (id) => promoteViaPipelineAdmin("promote_recommended_action_candidate", id),
     });
   } catch (error) {
-    if (error instanceof ModelProviderUnavailableError) throw error;
-    if (!isSkipablePipelineGap(error)) throw error;
+    const message = errorDetail(error);
+    const skipableAction =
+      isRecoverableModelError(error) ||
+      isSkipablePipelineGap(error) ||
+      isInfrastructureObjectError(error) ||
+      message.includes("SOURCE_SNAPSHOT_NOT_FOUND") ||
+      (error instanceof Error && error.name === "PromotionError");
+    if (skipableAction) {
+      await insertResearchEvent({
+        workspaceId: run.workspace_id,
+        researchRunId: run.id,
+        eventType: "pipeline_note",
+        payload: {
+          code: isRecoverableModelError(error) ? "MODEL_PROVIDER_TRANSIENT" : "ACTIONS_SKIPPED",
+          phase: "generating_actions",
+          detail: message.slice(0, 240) || "unknown",
+        },
+      });
+    } else {
+      throw error;
+    }
   }
   const counts = await countPromotedPipeline(run.workspace_id, run.resolved_company_id, run.analysis_id);
   const partial = run.unavailable_source_count > 0;
@@ -874,8 +1019,17 @@ function candidateFromPayload(run: ExternalResearchRunRow): EntityCandidate | nu
 function failureCode(error: unknown): ResearchFailureCode {
   if (error instanceof TavilyProviderError) return error.code;
   const message = error instanceof Error ? error.message : "";
-  if (error instanceof ModelProviderUnavailableError || message === "OLLAMA_UNAVAILABLE" || message === "OLLAMA_MODEL_NOT_CONFIGURED") {
-    return getLanguageModelProviderName() === "openai" ? (message.includes("not configured") ? "OPENAI_NOT_CONFIGURED" : "OPENAI_FAILED") : "LOCAL_MODEL_UNAVAILABLE";
+  if (
+    error instanceof ModelProviderUnavailableError ||
+    error instanceof ModelIncompleteResponseError ||
+    message === "OLLAMA_UNAVAILABLE" ||
+    message === "OLLAMA_MODEL_NOT_CONFIGURED"
+  ) {
+    return getLanguageModelProviderName() === "openai"
+      ? message.includes("not configured")
+        ? "OPENAI_NOT_CONFIGURED"
+        : "OPENAI_FAILED"
+      : "LOCAL_MODEL_UNAVAILABLE";
   }
   if (message === "TAVILY_AUTH_FAILED" || message === "TAVILY_RATE_LIMITED" || message === "TAVILY_TIMEOUT" || message === "TAVILY_PROVIDER_ERROR") {
     return message;
@@ -887,6 +1041,30 @@ function failureCode(error: unknown): ResearchFailureCode {
   if (message === "QUOTA_EXCEEDED") return "QUOTA_EXCEEDED";
   if (message === "PARSER_UNSUPPORTED") return "PARSER_UNSUPPORTED";
   return "PIPELINE_VALIDATION_FAILED";
+}
+
+/** Ollama/OpenAI transient failures — do not discard an otherwise valid research run. */
+function isRecoverableModelError(error: unknown): boolean {
+  if (
+    error instanceof ModelProviderUnavailableError ||
+    error instanceof ModelIncompleteResponseError ||
+    error instanceof ModelRefusalError
+  ) {
+    return true;
+  }
+  // Defend against duplicate class identities across bundler boundaries.
+  const name = error && typeof error === "object" && "name" in error ? String((error as { name?: unknown }).name) : "";
+  if (
+    name === "ModelProviderUnavailableError" ||
+    name === "ModelIncompleteResponseError" ||
+    name === "ModelRefusalError" ||
+    name === "AbortError" ||
+    name === "TimeoutError"
+  ) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return /OLLAMA_UNAVAILABLE|OLLAMA_MODEL_NOT_CONFIGURED|did not return JSON|timed out|incomplete/i.test(message);
 }
 
 function publicFailureMessage(code: ResearchFailureCode): string {
@@ -1019,6 +1197,19 @@ async function maybeGenerateFirstUsefulIntelligence(run: ExternalResearchRunRow)
       });
       promotedSignals = summary.promotedCount;
     } catch (error) {
+      if (isRecoverableModelError(error)) {
+        await insertResearchEvent({
+          workspaceId: latest.workspace_id,
+          researchRunId: latest.id,
+          eventType: "pipeline_note",
+          payload: {
+            code: "MODEL_PROVIDER_TRANSIENT",
+            phase: "progressive_signal_extraction",
+            detail: error instanceof Error ? error.message.slice(0, 240) : "unknown",
+          },
+        });
+        return;
+      }
       if (!isSkipablePipelineGap(error)) throw error;
     }
     await recordSignalOutcome(latest, gate.claimHash, promotedSignals);
@@ -1079,7 +1270,7 @@ async function maybeGenerateFirstUsefulIntelligence(run: ExternalResearchRunRow)
 }
 
 function isSkipablePipelineGap(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : "";
+  const message = errorDetail(error);
   return (
     message === "SIGNALS_NOT_FOUND" ||
     message === "CLAIMS_NOT_FOUND" ||
@@ -1087,8 +1278,32 @@ function isSkipablePipelineGap(error: unknown): boolean {
     message === "ACCOUNT_INTELLIGENCE_NOT_FOUND" ||
     message === "EFESO_FIT_NOT_FOUND" ||
     message === "FITS_NOT_FOUND" ||
-    message === "OPPORTUNITIES_NOT_FOUND"
+    message === "OPPORTUNITIES_NOT_FOUND" ||
+    /PromotionError|promotion RPC/i.test(message)
   );
+}
+
+function errorDetail(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const row = error as { message?: unknown; error?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    if (typeof row.message === "string" && row.message.trim()) return row.message;
+    if (typeof row.error === "string" && row.error.trim()) return row.error;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "unknown_object_error";
+    }
+  }
+  return String(error);
+}
+
+function isInfrastructureObjectError(error: unknown): boolean {
+  if (error instanceof Error) return false;
+  if (!error || typeof error !== "object") return false;
+  const row = error as { message?: unknown; code?: unknown; details?: unknown };
+  return typeof row.message === "string" || typeof row.code === "string" || typeof row.details === "string";
 }
 
 export async function companySlugForRun(run: ExternalResearchRunRow): Promise<string | null> {

@@ -35,8 +35,10 @@ const REPUTABLE_NEWS = new Set([
 const IR_HINT = /(?:^|\.)(?:ir|ri)\.|investor|investidores|relations-with-investors|relacoes-com-investidores/i;
 const REPORT_HINT =
   /earnings|resultado|resultados|relat[oó]rio|annual.?report|quarter|trimestr|20-f|10-k|financial.?statement|demonstrac/i;
+const OPERATIONAL_DISCLOSURE_HINT =
+  /deliver(y|ies)|backlog|production|throughput|capacity|ramp[- ]?up|nivelamento|aircraft delivered/i;
 const FILING_HOST = /(?:^|\.)(?:sec\.gov|cvm\.gov\.br|b3\.com\.br|gov\.br)$/i;
-const NEWSROOM_HINT = /newsroom|imprensa|press|releases?|noticias|notícias/i;
+const NEWSROOM_HINT = /newsroom|media-center|imprensa|press|releases?|noticias|notícias/i;
 
 export function sourcePriorityBand(source: AssessedSource, officialDomain?: string | null): SourcePriorityBand {
   if (!source.accepted || source.sourceQuality === "weak") return "weak";
@@ -61,7 +63,7 @@ export function sourcePriorityBand(source: AssessedSource, officialDomain?: stri
   if (isListingOrShell(source.canonicalUrl || source.url, source.title ?? "")) {
     if (official) return isNewsroom ? "official_newsroom" : "official_ir";
   }
-  if (official && isReportType) return "official_report";
+  if (official && (isReportType || OPERATIONAL_DISCLOSURE_HINT.test(haystack))) return "official_report";
   if (official && isIr) return "official_ir";
   if (isFiling && (official || source.sourceType === "filing" || source.sourceType === "regulator" || FILING_HOST.test(host))) {
     return "regulatory_filing";
@@ -76,12 +78,15 @@ export function rankSourcesForInitialPass(
   officialDomain?: string | null,
 ): AssessedSource[] {
   return [...sources].sort((left, right) => {
+    const leftSubstance = urlSubstanceScore(left.canonicalUrl || left.url, left.title, officialDomain);
+    const rightSubstance = urlSubstanceScore(right.canonicalUrl || right.url, right.title, officialDomain);
+    // Large substance gaps (e.g. recent operational disclosure vs stale earnings title) outweigh band.
+    if (Math.abs(leftSubstance - rightSubstance) >= 40) return rightSubstance - leftSubstance;
     const bandDelta = BAND_RANK[sourcePriorityBand(left, officialDomain)] - BAND_RANK[sourcePriorityBand(right, officialDomain)];
     if (bandDelta !== 0) return bandDelta;
     const qualityDelta = qualityRank(left.sourceQuality) - qualityRank(right.sourceQuality);
     if (qualityDelta !== 0) return qualityDelta;
-    const substanceDelta = urlSubstanceScore(right.canonicalUrl || right.url, right.title, officialDomain)
-      - urlSubstanceScore(left.canonicalUrl || left.url, left.title, officialDomain);
+    const substanceDelta = rightSubstance - leftSubstance;
     if (substanceDelta !== 0) return substanceDelta;
     return comparePublishedAt(right.publishedAt, left.publishedAt);
   });
@@ -128,10 +133,36 @@ export function urlSubstanceScore(url: string, title?: string | null, officialDo
   if (/resultado|earnings|2q|1q|3q|4q|quarterly|financial results/.test(hay) && !/central-de-resultados|results-center/.test(path)) {
     score += 40;
   }
+  // Prefer operational performance disclosures over generic earnings shells when titles match.
+  if (/deliver(y|ies)|backlog|production|throughput|capacity|ramp[- ]?up|nivelamento|aircraft delivered/.test(hay)) {
+    score += 45;
+  }
   if (/edgar|20-f|6-k|10-k/.test(hay)) score += 35;
+  const year = inferTitleYear(title) ?? inferUrlYear(normalizedUrl);
+  if (year !== null) {
+    if (year >= 2025) score += 25;
+    else if (year <= 2023) score -= 35;
+  }
   if (isListingOrShell(normalizedUrl, normalizedTitle)) score -= 40;
   if (officialDomain && normalizedUrl.includes(officialDomain.replace(/^www\./, "").toLowerCase())) score += 5;
+  // Thin media-center detail pages often lack article body; prefer substantive articles/PDFs.
+  if (/mediatype=news&detail=/i.test(normalizedUrl) && !/\.pdf(?:$|\?)/i.test(normalizedUrl)) score -= 20;
   return score;
+}
+
+function inferTitleYear(title?: string | null): number | null {
+  if (!title) return null;
+  const match = title.match(/\b(20[12]\d)\b/);
+  if (!match?.[1]) return null;
+  const year = Number(match[1]);
+  return Number.isFinite(year) ? year : null;
+}
+
+function inferUrlYear(url: string): number | null {
+  const match = url.match(/\/(20[12]\d)\//);
+  if (!match?.[1]) return null;
+  const year = Number(match[1]);
+  return Number.isFinite(year) ? year : null;
 }
 
 function isListingOrShell(url: string, title: string): boolean {

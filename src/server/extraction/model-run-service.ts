@@ -53,13 +53,23 @@ export async function executeStructuredModelRun<T extends z.ZodType>(input: {
     });
     return { run: completed, parsed: result.parsedOutput };
   } catch (error) {
-    const incomplete = error instanceof ModelIncompleteResponseError;
-    const refusal = error instanceof ModelRefusalError;
+    const name = error && typeof error === "object" && "name" in error ? String((error as { name?: unknown }).name) : "";
+    const incomplete =
+      error instanceof ModelIncompleteResponseError || name === "ModelIncompleteResponseError";
+    const refusal = error instanceof ModelRefusalError || name === "ModelRefusalError";
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : name
+            ? `${name}`
+            : "Model run failed.";
     await completeModelRun({
       id: run.id,
       status: incomplete ? "incomplete" : "failed",
       errorCode: refusal ? "model_refusal" : incomplete ? "incomplete" : "provider_error",
-      errorMessage: error instanceof Error ? error.message : "Model run failed.",
+      errorMessage: message.slice(0, 500),
     });
     throw error;
   }

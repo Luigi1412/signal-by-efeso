@@ -18,7 +18,7 @@ Rules:
 5. Title: short, factual, neutral. No promotional, speculative, or commercial language.
 6. Summary answers what / who / where / when / magnitude if supported. No recommendation, pitch, causal opinion, or commercial urgency.
 7. signal_nature is event (something happened/announced/started) or state (a condition exists).
-8. If no type fits safely, use other.
+8. Prefer a closed type when Claims explicitly support it (e.g. production_ramp_up, capacity_increase, performance_improvement, supply_chain_change, financial_pressure). Use other only when no closed type fits safely.
 9. Every Signal must cite at least one supplied claim_id as primary_evidence.
 10. Do not combine Claims from different companies into one Signal.
 11. Do not attribute a competitor event to the selected company.

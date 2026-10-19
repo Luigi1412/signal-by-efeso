@@ -123,6 +123,8 @@ export async function executeSignalExtraction(input: {
   provider: LanguageModelProvider;
   usedFakeProvider: boolean;
   promote: PromoteSignalFn;
+  /** When true, skip fresh model extraction and only finish pending_validation candidates. */
+  pendingOnly?: boolean;
 }): Promise<SignalExtractionSummary> {
   const company = await getCompanyRow(input.workspaceId, input.companyId);
   if (!company) throw new Error("COMPANY_NOT_FOUND");
@@ -168,64 +170,122 @@ export async function executeSignalExtraction(input: {
     (await getSnapshotForRun(input.workspaceId, input.researchRunId));
   if (!sourceSnapshotId) throw new Error("SOURCE_SNAPSHOT_NOT_FOUND");
 
-  const { run, parsed: extraction } = await executeStructuredModelRun({
-    workspaceId: input.workspaceId,
-    analysisId: input.analysisId,
-    researchRunId: input.researchRunId,
-    sourceSnapshotId,
-    provider: input.provider,
-    inputManifest: {
-      company_id: input.companyId,
-      claim_ids: claims.map((claim) => claim.id),
-      claim_count: claims.length,
-    },
-    request: {
-      taskType: "signal_extraction",
-      model: getExtractionModel(),
-      reasoningEffort: "low",
-      promptVersion: SIGNAL_EXTRACTION_PROMPT_VERSION,
-      schemaVersion: SIGNAL_EXTRACTION_SCHEMA_VERSION,
-      schema: signalExtractionOutputSchema,
-      schemaName: "signal_extraction",
-      instructions: SIGNAL_EXTRACTION_INSTRUCTIONS,
-      input: serializeSignalExtractionInput({
-        company: {
-          id: company.id,
-          displayName: company.display_name,
-          slug: company.slug,
-          industry: company.industry,
-          countryCode: company.primary_country_code,
-        },
-        claims,
-      }),
-    },
-  });
-
   const processed = new Set<string>();
-  for (const extracted of extraction.signals) {
-    const draft = extractedSignalToDraft(extracted);
-    const candidate = await persistSignalCandidate({
-      workspaceId: input.workspaceId,
-      companyId: input.companyId,
-      analysisId: input.analysisId,
-      researchRunId: input.researchRunId,
-      sourceSnapshotId,
-      originModelRunId: run.id,
-      draft,
-    });
-    if (processed.has(candidate.id)) continue;
-    processed.add(candidate.id);
+
+  if (!input.pendingOnly) {
+    try {
+      const { run, parsed: extraction } = await executeStructuredModelRun({
+        workspaceId: input.workspaceId,
+        analysisId: input.analysisId,
+        researchRunId: input.researchRunId,
+        sourceSnapshotId,
+        provider: input.provider,
+        inputManifest: {
+          company_id: input.companyId,
+          claim_ids: claims.map((claim) => claim.id),
+          claim_count: claims.length,
+        },
+        request: {
+          taskType: "signal_extraction",
+          model: getExtractionModel(),
+          reasoningEffort: "low",
+          promptVersion: SIGNAL_EXTRACTION_PROMPT_VERSION,
+          schemaVersion: SIGNAL_EXTRACTION_SCHEMA_VERSION,
+          schema: signalExtractionOutputSchema,
+          schemaName: "signal_extraction",
+          instructions: SIGNAL_EXTRACTION_INSTRUCTIONS,
+          input: serializeSignalExtractionInput({
+            company: {
+              id: company.id,
+              displayName: company.display_name,
+              slug: company.slug,
+              industry: company.industry,
+              countryCode: company.primary_country_code,
+            },
+            claims,
+          }),
+        },
+      });
+
+      for (const extracted of extraction.signals) {
+        const draft = extractedSignalToDraft(extracted);
+        const candidate = await persistSignalCandidate({
+          workspaceId: input.workspaceId,
+          companyId: input.companyId,
+          analysisId: input.analysisId,
+          researchRunId: input.researchRunId,
+          sourceSnapshotId,
+          originModelRunId: run.id,
+          draft,
+        });
+        if (processed.has(candidate.id)) continue;
+        processed.add(candidate.id);
+        await validateAndMaybePromoteSignal({
+          workspaceId: input.workspaceId,
+          analysisId: input.analysisId,
+          researchRunId: input.researchRunId,
+          sourceSnapshotId,
+          companyResolved: company.resolution_status === "resolved",
+          companyId: input.companyId,
+          candidate,
+          draft,
+          claims,
+          provider: input.provider,
+          promote: input.promote,
+        });
+      }
+    } catch (error) {
+      // A transient extraction failure must not block finishing candidates already pending validation.
+      const pendingExists = (await listSignalCandidatesForAnalysis(input.analysisId)).some(
+        (row) => row.company_id === input.companyId && row.status === "pending_validation",
+      );
+      if (!pendingExists) throw error;
+    }
+  }
+
+  // Resume candidates left pending when a prior model call failed mid-validation,
+  // even if this extraction pass returned no new signals.
+  const pending = (await listSignalCandidatesForAnalysis(input.analysisId)).filter(
+    (row) =>
+      row.company_id === input.companyId &&
+      row.status === "pending_validation" &&
+      !processed.has(row.id),
+  );
+  for (const candidate of pending) {
+    const claimLinks = await listSignalCandidateClaims(candidate.id);
+    const draft = draftFromSignalCandidateRow(candidate, claimLinks);
     await validateAndMaybePromoteSignal({
       workspaceId: input.workspaceId,
       analysisId: input.analysisId,
       researchRunId: input.researchRunId,
-      sourceSnapshotId,
+      sourceSnapshotId: candidate.source_snapshot_id ?? sourceSnapshotId,
       companyResolved: company.resolution_status === "resolved",
       companyId: input.companyId,
       candidate,
       draft,
       claims,
       provider: input.provider,
+      promote: input.promote,
+    });
+  }
+
+  // Reconsider needs_review candidates blocked only by optional geography/period/magnitude absence.
+  const optionalReview = (await listSignalCandidatesForAnalysis(input.analysisId)).filter(
+    (row) =>
+      row.company_id === input.companyId &&
+      row.status === "needs_review" &&
+      (row.rejection_reason_code === "geography" ||
+        row.rejection_reason_code === "period" ||
+        row.rejection_reason_code === "magnitude") &&
+      !processed.has(row.id),
+  );
+  for (const candidate of optionalReview) {
+    const claimLinks = await listSignalCandidateClaims(candidate.id);
+    const draft = draftFromSignalCandidateRow(candidate, claimLinks);
+    await reconsiderOptionalAbsenceReview({
+      companyResolved: company.resolution_status === "resolved",
+      candidate,
+      draft,
       promote: input.promote,
     });
   }
@@ -237,6 +297,88 @@ export async function executeSignalExtraction(input: {
     claimCount: claims.length,
     usedFakeProvider: input.usedFakeProvider,
   });
+}
+
+async function reconsiderOptionalAbsenceReview(input: {
+  companyResolved: boolean;
+  candidate: SignalCandidateRow;
+  draft: SignalCandidateDraft;
+  promote: PromoteSignalFn;
+}): Promise<void> {
+  if (input.candidate.status !== "needs_review") return;
+  const existing = await listSignalValidations(input.candidate.id);
+  const existingRecords: ValidationRecord[] = existing.map((row) => ({
+    validatorCode: row.validator_code,
+    validatorVersion: row.validator_version,
+    validatorType: row.validator_type as ValidationRecord["validatorType"],
+    result: row.result as ValidationRecord["result"],
+    severity: row.severity as ValidationRecord["severity"],
+    message: row.message,
+    details: (row.details ?? {}) as Record<string, unknown>,
+    modelRunId: row.model_run_id,
+  }));
+  const decision = decideSignalCandidateStatus({
+    hasPrimaryClaim: input.draft.claims.some((link) => link.relationshipType === "primary_evidence"),
+    companyResolved: input.companyResolved,
+    signalType: String(input.draft.signalType),
+    validations: existingRecords,
+  });
+  if (decision.status !== "validated") return;
+  if (!canTransition("needs_review", "validated")) return;
+  const grounding = signalGroundingLevel(existingRecords);
+  await updateSignalCandidateConfidence(
+    input.candidate.id,
+    grounding === "direct" || grounding === "supported" || grounding === "mixed" ? grounding : null,
+  );
+  await updateSignalCandidateOutcome({
+    id: input.candidate.id,
+    fromStatus: "needs_review",
+    status: "validated",
+    rejectionReasonCode: null,
+    rejectionReasonText: null,
+  });
+  await input.promote(input.candidate.id);
+}
+
+function draftFromSignalCandidateRow(
+  candidate: SignalCandidateRow,
+  claimLinks: Array<{ claim_id: string; relationship_type: string }>,
+): SignalCandidateDraft {
+  const tagsRaw = Array.isArray(candidate.proposed_tags) ? candidate.proposed_tags : [];
+  const companiesRaw = Array.isArray(candidate.proposed_companies) ? candidate.proposed_companies : [];
+  return {
+    signalType: candidate.proposed_signal_type,
+    signalNature: candidate.proposed_signal_nature,
+    title: candidate.proposed_title,
+    summary: candidate.proposed_summary,
+    suggestedImportance: candidate.proposed_importance,
+    assertionMode: candidate.proposed_assertion_mode,
+    eventDate: candidate.proposed_event_date,
+    effectivePeriodStart: candidate.proposed_effective_period_start,
+    effectivePeriodEnd: candidate.proposed_effective_period_end,
+    geography: candidate.proposed_geography,
+    metricName: candidate.proposed_metric_name,
+    numericValue: candidate.proposed_numeric_value,
+    unit: candidate.proposed_unit,
+    currencyCode: candidate.proposed_currency_code,
+    coreEvent: candidate.proposed_core_event || candidate.proposed_title,
+    tags: tagsRaw.map((tag) => {
+      const row = tag as { category?: string; canonical_name?: string; canonicalName?: string };
+      return { category: String(row.category ?? "theme"), canonicalName: String(row.canonical_name ?? row.canonicalName ?? "") };
+    }),
+    companies: companiesRaw.map((row) => {
+      const item = row as { company_id?: string; companyId?: string; role?: string };
+      return {
+        companyId: String(item.company_id || item.companyId || candidate.company_id),
+        role: (item.role || "primary") as SignalCandidateDraft["companies"][number]["role"],
+      };
+    }),
+    parentSignalId: candidate.proposed_parent_signal_id,
+    claims: claimLinks.map((link) => ({
+      claimId: link.claim_id,
+      relationshipType: link.relationship_type as SignalCandidateDraft["claims"][number]["relationshipType"],
+    })),
+  };
 }
 
 async function persistSignalCandidate(input: {
@@ -324,30 +466,72 @@ async function validateAndMaybePromoteSignal(input: {
   if (input.candidate.status !== "pending_validation") return;
 
   const existing = await listSignalValidations(input.candidate.id);
-  if (existing.length > 0) return;
+  const existingRecords: ValidationRecord[] = existing.map((row) => ({
+    validatorCode: row.validator_code,
+    validatorVersion: row.validator_version,
+    validatorType: row.validator_type as ValidationRecord["validatorType"],
+    result: row.result as ValidationRecord["result"],
+    severity: row.severity as ValidationRecord["severity"],
+    message: row.message,
+    details: (row.details ?? {}) as Record<string, unknown>,
+    modelRunId: row.model_run_id,
+  }));
+  const hasModelValidation = existingRecords.some((row) => row.validatorType === "model");
+
+  // Resume after a prior model failure: deterministic validators may already be persisted.
+  // Do not early-return while the candidate is still pending_validation without model validators
+  // (unless deterministic already blocked).
+  if (existingRecords.length > 0 && (hasModelValidation || hasBlockingSignalFailure(existingRecords))) {
+    const decision = decideSignalCandidateStatus({
+      hasPrimaryClaim: input.draft.claims.some((link) => link.relationshipType === "primary_evidence"),
+      companyResolved: input.companyResolved,
+      signalType: String(input.draft.signalType),
+      validations: existingRecords,
+    });
+    if (!canTransition("pending_validation", decision.status)) return;
+    const grounding = signalGroundingLevel(existingRecords);
+    await updateSignalCandidateConfidence(
+      input.candidate.id,
+      grounding === "direct" || grounding === "supported" || grounding === "mixed" ? grounding : null,
+    );
+    await updateSignalCandidateOutcome({
+      id: input.candidate.id,
+      fromStatus: "pending_validation",
+      status: decision.status,
+      rejectionReasonCode: decision.rejectionReasonCode,
+      rejectionReasonText: decision.rejectionReasonText,
+    });
+    if (decision.status === "validated") {
+      await input.promote(input.candidate.id);
+    }
+    return;
+  }
 
   const claimsById = new Map(input.claims.map((claim) => [claim.id, claim]));
   const fingerprints = await listActiveSignalFingerprints(input.workspaceId, input.companyId);
   const existingTitles = await listActiveSignalTitles(input.workspaceId, input.companyId);
 
-  const deterministic = runSignalDeterministicValidators({
-    draft: input.draft,
-    companyId: input.companyId,
-    companyExists: true,
-    companyResolved: input.companyResolved,
-    workspaceId: input.workspaceId,
-    claimsById,
-    existingFingerprints: fingerprints,
-    sourceSnapshotId: input.sourceSnapshotId,
-  });
-  await insertSignalValidations({
-    workspaceId: input.workspaceId,
-    candidateId: input.candidate.id,
-    records: deterministic,
-  });
+  let allValidations: ValidationRecord[] = existingRecords;
+  if (existingRecords.length === 0) {
+    const deterministic = runSignalDeterministicValidators({
+      draft: input.draft,
+      companyId: input.companyId,
+      companyExists: true,
+      companyResolved: input.companyResolved,
+      workspaceId: input.workspaceId,
+      claimsById,
+      existingFingerprints: fingerprints,
+      sourceSnapshotId: input.sourceSnapshotId,
+    });
+    await insertSignalValidations({
+      workspaceId: input.workspaceId,
+      candidateId: input.candidate.id,
+      records: deterministic,
+    });
+    allValidations = [...deterministic];
+  }
 
-  let allValidations: ValidationRecord[] = [...deterministic];
-  if (!hasBlockingSignalFailure(deterministic)) {
+  if (!hasBlockingSignalFailure(allValidations)) {
     const cited = input.draft.claims
       .map((link) => claimsById.get(link.claimId))
       .filter((row): row is SignalClaimContext => Boolean(row));

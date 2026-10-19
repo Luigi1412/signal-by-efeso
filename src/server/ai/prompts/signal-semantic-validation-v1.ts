@@ -12,7 +12,7 @@ Rules:
 3. title_factuality: title must be short, factual, and not stronger than the Claims.
 4. summary_grounding: summary must be supported by Claims; no recommendation or pitch.
 5. company_attribution: the Signal must belong to the supplied company, not a competitor.
-6. geography / period / magnitude: must not contradict Claims.
+6. geography / period / magnitude: must not contradict Claims. If the candidate leaves them null and Claims also do not assert them, return pass (absence is allowed). Warn or fail only on contradiction or invented location/period/magnitude.
 7. assertion_mode: planned/announced/expected/target must not be rewritten as reported_actual.
 8. unsupported_inference: fail if the Signal invents cause, crisis, completion, or intent.
 9. commercial_language: fail if the text sells, pitches, or recommends EFESO action.

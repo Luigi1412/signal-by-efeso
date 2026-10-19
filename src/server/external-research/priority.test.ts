@@ -61,6 +61,36 @@ test("official IR and earnings rank above Reuters and blogs", () => {
   assert.equal(ranked[2]?.url, reuters.url);
 });
 
+test("operational delivery disclosure ranks above older generic earnings title", () => {
+  const domain = "example-aero.com";
+  const deliveries = assessSource(
+    {
+      url: "https://www.example-aero.com/media-center/en?detail=23997",
+      title: "Company reports 91 aircraft delivered in the fourth quarter",
+      publisher: "example-aero.com",
+      sourceType: "official_page",
+      sourceTier: 1,
+      publishedAt: "2026-01-15",
+    },
+    domain,
+  );
+  const olderEarnings = assessSource(
+    {
+      url: "https://www.example-aero.com/media-center/en?detail=13834",
+      title: "Earnings Results 4th Quarter 2023 and Fiscal Year 2023",
+      publisher: "example-aero.com",
+      sourceType: "earnings_release",
+      sourceTier: 1,
+      publishedAt: "2024-03-01",
+    },
+    domain,
+  );
+  assert.equal(sourcePriorityBand(deliveries, domain), "official_report");
+  assert.equal(sourcePriorityBand(olderEarnings, domain), "official_report");
+  const ranked = rankSourcesForInitialPass([olderEarnings, deliveries], domain);
+  assert.equal(ranked[0]?.url, deliveries.url);
+});
+
 test("earnings article ranks above IR listing shells", () => {
   const article = source({
     url: "https://www.suzano.com.br/en/news-post/second-quarter-results-suzano",

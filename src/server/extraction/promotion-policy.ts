@@ -86,6 +86,10 @@ export function canTransition(from: CandidateStatus, to: CandidateStatus): boole
   if (from === "pending_validation") {
     return to === "validated" || to === "needs_review" || to === "rejected";
   }
+  if (from === "needs_review") {
+    // Allow promotion-policy corrections to lift optional-absence reviews.
+    return to === "validated" || to === "rejected";
+  }
   if (from === "validated") return to === "promoted";
   return false;
 }

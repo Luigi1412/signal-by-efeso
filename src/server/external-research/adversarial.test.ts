@@ -89,6 +89,7 @@ test("query generation stays bounded", () => {
   const queries = generateResearchQueries({ companyName: "Suzano S.A.", officialDomain: "suzano.com.br", country: "BR" });
   assert.ok(queries.length <= 8);
   assert.ok(queries.some((row) => row.site === "suzano.com.br"));
+  assert.ok(queries.some((row) => /deliveries|backlog|production|capacity/i.test(row.query)));
 });
 
 test("fake discovery accepts official sources and rejects impostors", async () => {
