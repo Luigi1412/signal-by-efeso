@@ -54,3 +54,13 @@ test("typo suggests a candidate and does not auto-resolve", () => {
     assert.ok(result.suggestions.some((row) => row.officialDomain === "suzano.com.br"));
   }
 });
+
+test("Embraer resolves to the Brazilian aerospace company for entity resolution", () => {
+  const result = resolveCompanyEntity({ query: "Embraer S.A.", country: "BR" });
+  assert.equal(result.kind, "resolved");
+  if (result.kind === "resolved") {
+    assert.equal(result.candidate.officialDomain, "embraer.com");
+    assert.equal(result.candidate.headquartersCountry, "BR");
+    assert.match(result.candidate.industry, /aerospace/i);
+  }
+});

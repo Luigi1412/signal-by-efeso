@@ -18,6 +18,14 @@ export const PUBLIC_COMPANY_CATALOG: CompanyIdentity[] = [
     decisionBasis: ["normalized name", "official domain suzano.com.br"],
   },
   {
+    canonicalName: "Embraer S.A.",
+    officialDomain: "embraer.com",
+    headquartersCountry: "BR",
+    industry: "Aerospace & Defense",
+    aliases: ["embraer", "embraer sa", "embraer s.a.", "embj3", "embj"],
+    decisionBasis: ["normalized name", "official domain embraer.com", "Brazil aerospace"],
+  },
+  {
     canonicalName: "Natura &Co",
     officialDomain: "natura.com.br",
     headquartersCountry: "BR",
