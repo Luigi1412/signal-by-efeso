@@ -43,12 +43,16 @@ export const geographyLabel: Record<Geography, string> = ui.geography;
 export const signalCategoryLabel: Record<SignalCategory, string> = ui.signalCategory;
 export const sourceTypeLabel: Record<SourceType, string> = ui.sourceType;
 
-const MONTHS_PT_SHORT = ["jan.", "fev.", "mar.", "abr.", "mai.", "jun.", "jul.", "ago.", "set.", "out.", "nov.", "dez."] as const;
+const MONTHS_PT_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"] as const;
 
-/** Deterministic pt-BR date. Avoids Node vs browser Intl ICU drift. */
-export function formatDate(iso: string): string {
-  const [year, month, day] = iso.slice(0, 10).split("-").map(Number);
-  return `${String(day).padStart(2, "0")} de ${MONTHS_PT_SHORT[month - 1]} de ${year}`;
+/** Deterministic executive pt-BR date, e.g. 15 out 2026. Avoids Node vs browser Intl ICU drift. */
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const day = iso.slice(0, 10);
+  const [year, month, date] = day.split("-");
+  const monthIndex = Number(month) - 1;
+  if (!year || Number.isNaN(monthIndex) || monthIndex < 0 || monthIndex > 11 || !date) return day;
+  return `${Number(date)} ${MONTHS_PT_SHORT[monthIndex]} ${year}`;
 }
 
 export { t, ui };

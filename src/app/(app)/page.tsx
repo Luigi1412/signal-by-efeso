@@ -1,69 +1,40 @@
-import Link from "next/link";
 import { CompanySearch } from "@/components/home/company-search";
-import { RecentAnalysesTable } from "@/components/home/recent-analyses-table";
-import { PageContainer } from "@/components/layout/page-header";
-import { MetricInline } from "@/components/shared/metric-card";
-import { SectionHeading } from "@/components/shared/section-heading";
-import { Button } from "@/components/ui/button";
-import { homeMetrics } from "@/data";
-import { ui } from "@/i18n";
-import { routes } from "@/lib/routes";
+import { ExecutiveDashboardView } from "@/components/home/executive-dashboard";
+import { PageContainer, PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { t, ui } from "@/i18n";
 import { isPersistenceUnavailable } from "@/server/persistence-error";
-import { getMergedRecentAnalysisRows } from "@/server/services/analysis-service";
-import type { Company, RecentAnalysis } from "@/types";
+import { getExecutiveDashboard } from "@/server/services/executive-dashboard-service";
+import { getSidebarUser } from "@/server/services/analysis-service";
 
 export default async function HomePage() {
-  let rows: { analysis: RecentAnalysis; company: Company }[] = [];
+  const user = await getSidebarUser();
+  const firstName = user.name.trim().split(/\s+/)[0] || "EFESO";
   let persistenceError = false;
+  let dashboard = null;
   try {
-    rows = await getMergedRecentAnalysisRows();
+    dashboard = await getExecutiveDashboard();
   } catch (error) {
     if (!isPersistenceUnavailable(error)) throw error;
     persistenceError = true;
   }
 
   return (
-    <PageContainer className="pt-10 lg:pt-16">
-      <section className="mx-auto flex max-w-3xl flex-col items-center text-center">
-        <div className="eyebrow mb-3">{ui.home.welcome}</div>
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-[36px] sm:leading-[1.15]">
-          {ui.home.headline}
-        </h1>
-        <p className="mt-3 max-w-xl text-base text-muted-foreground">{ui.home.supporting}</p>
-        <div className="mt-8 w-full max-w-2xl">
-          <CompanySearch />
-        </div>
-      </section>
-
-      <section className="mt-14 grid grid-cols-3 gap-6 border-y py-5 sm:mx-auto sm:max-w-2xl sm:gap-10">
-        {homeMetrics.map((metric) => (
-          <MetricInline
-            key={metric.key}
-            value={metric.value}
-            label={ui.home.metrics[metric.key]}
-            className="items-center text-center"
-          />
-        ))}
-      </section>
-
-      <section className="mt-12">
-        <SectionHeading
-          title={ui.home.recentTitle}
-          description={ui.home.recentDescription}
-          actions={
-            <Button asChild variant="outline" size="sm">
-              <Link href={routes.companies}>{ui.home.viewAll}</Link>
-            </Button>
-          }
-          className="mb-4"
-        />
-        {persistenceError ? (
-          <EmptyState title={ui.persistence.unavailable} />
-        ) : (
-          <RecentAnalysesTable rows={rows} />
-        )}
-      </section>
+    <PageContainer>
+      <PageHeader
+        eyebrow={t(ui.home.welcome, { name: firstName })}
+        title={ui.home.headline}
+        description={ui.home.supporting}
+        className="mb-6"
+      />
+      <div className="mb-10 max-w-3xl">
+        <CompanySearch />
+      </div>
+      {persistenceError || !dashboard ? (
+        <EmptyState title={ui.persistence.unavailable} />
+      ) : (
+        <ExecutiveDashboardView dashboard={dashboard} />
+      )}
     </PageContainer>
   );
 }

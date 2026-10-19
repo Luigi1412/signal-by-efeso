@@ -1,23 +1,18 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Plus } from "lucide-react";
-import { RecentAnalysesTable } from "@/components/home/recent-analyses-table";
 import { PageContainer, PageHeader } from "@/components/layout/page-header";
-import { Button } from "@/components/ui/button";
-import { t, ui } from "@/i18n";
-import { routes } from "@/lib/routes";
+import { CompanyAccountCard } from "@/components/companies/company-account-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { t, ui } from "@/i18n";
 import { isPersistenceUnavailable } from "@/server/persistence-error";
-import { getMergedRecentAnalysisRows } from "@/server/services/analysis-service";
-import type { Company, RecentAnalysis } from "@/types";
+import { getExecutiveDashboard } from "@/server/services/executive-dashboard-service";
 
 export const metadata: Metadata = { title: ui.companies.title };
 
 export default async function CompaniesPage() {
-  let rows: { analysis: RecentAnalysis; company: Company }[] = [];
   let persistenceError = false;
+  let dashboard = null;
   try {
-    rows = await getMergedRecentAnalysisRows();
+    dashboard = await getExecutiveDashboard();
   } catch (error) {
     if (!isPersistenceUnavailable(error)) throw error;
     persistenceError = true;
@@ -25,27 +20,19 @@ export default async function CompaniesPage() {
 
   return (
     <PageContainer>
-      <PageHeader
-        title={ui.companies.title}
-        description={ui.companies.description}
-        actions={
-          <Button asChild variant="brand">
-            <Link href={routes.newAnalysis}>
-              <Plus data-icon="inline-start" />
-              {ui.nav.newAnalysis}
-            </Link>
-          </Button>
-        }
-        className="mb-6"
-      />
-      {persistenceError ? (
+      <PageHeader title={ui.companies.title} description={ui.companies.description} className="mb-8" />
+      {persistenceError || !dashboard ? (
         <EmptyState title={ui.persistence.unavailable} />
+      ) : dashboard.accounts.length === 0 ? (
+        <EmptyState title={ui.companies.empty} />
       ) : (
         <>
-          <RecentAnalysesTable rows={rows} />
-          <p className="mt-3 text-xs text-muted-foreground">
-            {t(ui.companies.showing, { shown: rows.length, total: 12 })}
-          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            {dashboard.accounts.map((account) => (
+              <CompanyAccountCard key={account.companyId} account={account} />
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground">{t(ui.companies.showing, { shown: dashboard.accounts.length })}</p>
         </>
       )}
     </PageContainer>

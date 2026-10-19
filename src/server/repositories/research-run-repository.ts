@@ -15,6 +15,33 @@ export async function getResearchRun(workspaceId: string, runId: string): Promis
   return data;
 }
 
+export async function getResearchRunForPipeline(workspaceId: string, runId: string): Promise<ResearchRunRecord | null> {
+  const { createPipelineAdminClient } = await import("@/lib/supabase/pipeline-admin");
+  const { data, error } = await createPipelineAdminClient()
+    .from("research_runs")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("id", runId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as ResearchRunRecord | null;
+}
+
+export async function listResearchRunsForAnalysis(
+  workspaceId: string,
+  analysisId: string,
+): Promise<ResearchRunRecord[]> {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("research_runs")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("analysis_id", analysisId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function getLatestRunForAnalysis(
   workspaceId: string,
   analysisId: string,

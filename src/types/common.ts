@@ -2,8 +2,11 @@
 
 export type ISODate = string;
 
-/** The four epistemic states Signal distinguishes. */
-export type EvidenceType = "verified" | "derived" | "hypothesis" | "conflict";
+/**
+ * Presentation labels derived from claim_type + verification_status.
+ * Not stored as a single database status.
+ */
+export type EvidenceType = "verified" | "derived" | "hypothesis" | "conflict" | "unverified";
 
 export type Relevance = "high" | "medium" | "low";
 

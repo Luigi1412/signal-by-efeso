@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Award, BarChart3, BookMarked, Boxes, Factory, Layers, Trophy } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/layout/page-header";
 import { PlaceholderGrid, type PlaceholderItem } from "@/components/shared/placeholder-grid";
 import { ui } from "@/i18n";
+import { routes } from "@/lib/routes";
 
 export const metadata: Metadata = { title: ui.knowledgeBase.title };
 
@@ -30,6 +32,11 @@ export default function KnowledgeBasePage() {
       <PlaceholderGrid items={items} />
 
       <p className="mt-6 max-w-2xl text-sm text-muted-foreground">{ui.knowledgeBase.notImplemented}</p>
+      <p className="mt-3 text-sm">
+        <Link href={routes.expertise} className="underline underline-offset-4">
+          {ui.knowledgeBase.openCatalog}
+        </Link>
+      </p>
     </PageContainer>
   );
 }

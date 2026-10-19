@@ -1,7 +1,7 @@
 -- SIGNAL v0.2 Sprint 1 seed — idempotent.
 -- Workspace + companies + root entities needed for Company Resolution UX.
 -- Does NOT seed claims, evidence, signals, opportunities, capabilities, cases, or reports.
--- Profile / membership for Mariana Costa is created by server-side demo bootstrap (needs auth.users).
+-- Profile / membership for synthetic demo users is created by npm run seed:demo (needs auth.users).
 
 -- EFESO Brazil
 INSERT INTO public.workspaces (

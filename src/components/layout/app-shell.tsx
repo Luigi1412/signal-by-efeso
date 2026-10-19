@@ -12,16 +12,17 @@ import type { CurrentUser } from "@/types";
 interface AppShellProps {
   children: React.ReactNode;
   user: CurrentUser;
+  showAdminNav?: boolean;
 }
 
 /** Persistent sidebar on desktop; collapsible sheet on small screens. */
-export function AppShell({ children, user }: AppShellProps) {
+export function AppShell({ children, user, showAdminNav = false }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="flex min-h-dvh print:min-h-0">
       <div className="sticky top-0 hidden h-dvh shrink-0 print:hidden lg:block">
-        <AppSidebar user={user} />
+        <AppSidebar user={user} showAdminNav={showAdminNav} />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -38,7 +39,12 @@ export function AppShell({ children, user }: AppShellProps) {
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-60 p-0 sm:max-w-60" showCloseButton={false}>
           <SheetTitle className="sr-only">Navegação</SheetTitle>
-          <AppSidebar user={user} className="border-r-0" onNavigate={() => setMobileOpen(false)} />
+          <AppSidebar
+            user={user}
+            showAdminNav={showAdminNav}
+            className="border-r-0"
+            onNavigate={() => setMobileOpen(false)}
+          />
         </SheetContent>
       </Sheet>
     </div>

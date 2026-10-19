@@ -1,6 +1,5 @@
 "use client";
 
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { t, ui } from "@/i18n";
 import { confidenceLabel } from "@/lib/labels";
 import { cn } from "@/lib/utils";
@@ -18,22 +17,18 @@ export function ConfidenceIndicator({ value, showLabel = true, className }: Conf
   const aria = t(ui.confidence.aria, { value: value ?? "—" });
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          tabIndex={0}
-          className={cn("inline-flex cursor-help items-center gap-2 outline-none", className)}
-          aria-label={aria}
-        >
-          {value === null ? (
-            <span className="tabular text-sm text-muted-foreground">—</span>
-          ) : (
-            <span className="tabular text-sm font-medium text-foreground">{value}</span>
-          )}
-          {showLabel && <span className="text-xs text-muted-foreground">{label}</span>}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{ui.confidence.tooltip}</TooltipContent>
-    </Tooltip>
+    <span
+      tabIndex={0}
+      title={ui.confidence.tooltip}
+      className={cn("inline-flex cursor-help items-center gap-2 outline-none", className)}
+      aria-label={aria}
+    >
+      {value === null ? (
+        <span className="tabular text-sm text-muted-foreground">—</span>
+      ) : (
+        <span className="tabular text-sm font-medium text-foreground">{value}</span>
+      )}
+      {showLabel && <span className="text-xs text-muted-foreground">{label}</span>}
+    </span>
   );
 }

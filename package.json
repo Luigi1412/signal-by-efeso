@@ -1,6 +1,6 @@
 {
   "name": "signal",
-  "version": "0.2.0",
+  "version": "0.10.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -13,7 +13,35 @@
     "supabase:reset": "npx supabase db reset",
     "supabase:status": "npx supabase status",
     "supabase:types": "npx supabase gen types typescript --local --schema public > src/types/database.ts && node supabase/append-db-aliases.mjs",
-    "test:rls": "npx supabase test db --local supabase/tests/rls_workspace_isolation.sql"
+    "test:rls": "npx supabase test db --local supabase/tests/rls_workspace_isolation.sql",
+    "test:evidence": "npx supabase test db --local supabase/tests/evidence_integrity.sql",
+    "test:storage": "npx supabase test db --local supabase/tests/storage_isolation.sql",
+    "test:extraction": "tsx --test src/server/parsers/*.test.ts src/server/extraction/*.test.ts src/server/ai/providers/*.test.ts src/server/knowledge/*.test.ts src/server/signals/*.test.ts src/server/intelligence/*.test.ts src/server/opportunities/*.test.ts src/server/relationship/*.test.ts src/server/recommended-actions/*.test.ts src/server/access/*.test.ts src/server/external-research/*.test.ts",
+    "test:external-research": "tsx --test src/server/external-research/*.test.ts",
+    "test:external-research-rls": "npx supabase test db --local supabase/tests/external_research_rls.sql",
+    "test:access": "tsx --test src/server/access/*.test.ts",
+    "test:access-control": "npx supabase test db --local supabase/tests/access_control.sql",
+    "seed:demo": "tsx --env-file=.env.local scripts/seed-demo.ts",
+    "test:knowledge": "tsx --test src/server/knowledge/*.test.ts",
+    "test:knowledge-integrity": "npx supabase test db --local supabase/tests/knowledge_integrity.sql",
+    "test:signal": "tsx --test src/server/signals/*.test.ts",
+    "test:signal-integrity": "npx supabase test db --local supabase/tests/signal_integrity.sql",
+    "test:intelligence": "tsx --test src/server/intelligence/*.test.ts",
+    "test:intelligence-integrity": "npx supabase test db --local supabase/tests/account_intelligence_integrity.sql",
+    "test:opportunity": "tsx --test src/server/opportunities/*.test.ts",
+    "test:opportunity-integrity": "npx supabase test db --local supabase/tests/opportunity_integrity.sql",
+    "test:relationship": "tsx --test src/server/relationship/*.test.ts src/server/recommended-actions/*.test.ts",
+    "test:relationship-integrity": "npx supabase test db --local supabase/tests/relationship_action_integrity.sql",
+    "test:extraction-integrity": "npx supabase test db --local supabase/tests/extraction_integrity.sql",
+    "test:pipeline-security": "npx supabase test db --local supabase/tests/pipeline_security.sql",
+    "test:promotion": "npx supabase test db --local supabase/tests/promotion_atomicity.sql",
+    "test:ai-live": "tsx tests/ai-live.ts",
+    "test:ai-local": "tsx tests/ai-local.ts",
+    "test:research-live": "tsx tests/research-live.ts",
+    "test:suzano-e2e": "node --require ./tests/stub-server-only.cjs --import tsx tests/suzano-e2e.ts",
+    "test:demo-consistency": "npx supabase test db --local supabase/tests/demo_consistency.sql",
+    "test:product-integrity": "npx supabase test db --local supabase/tests/product_integrity.sql",
+    "release:check": "tsx --env-file=.env.local scripts/release-check.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -22,6 +50,8 @@
     "cn": "^0.4.0",
     "lucide-react": "^1.57.0",
     "next": "16.4.0",
+    "openai": "^7.34.0",
+    "pdfjs-dist": "^6.4.299",
     "radix-ui": "^1.8.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -39,6 +69,7 @@
     "eslint-config-next": "16.4.0",
     "supabase": "^2.121.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

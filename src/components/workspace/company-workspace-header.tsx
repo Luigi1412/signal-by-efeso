@@ -1,64 +1,42 @@
-import Link from "next/link";
-import { ChevronRight } from "lucide-react";
-import { DemoNotice } from "@/components/shared/demo-notice";
-import { AnalysisStatusBadge } from "@/components/shared/status-badge";
+import { Suspense } from "react";
+import { DemoBadge } from "@/components/shared/demo-badge";
 import { ui } from "@/i18n";
-import { geographyLabel, researchFocusLabel } from "@/lib/labels";
-import { routes } from "@/lib/routes";
-import type { Analysis, Company } from "@/types";
+import type { Company } from "@/types";
+import type { WorkspaceHeaderAnalysis } from "@/server/services/analysis-service";
 import { WorkspaceActions } from "./workspace-actions";
 import { WorkspaceTabs } from "./workspace-tabs";
+import { CompanyBreadcrumb } from "./company-breadcrumb";
 
 interface CompanyWorkspaceHeaderProps {
   company: Company;
-  analysis?: Analysis;
+  analysis?: WorkspaceHeaderAnalysis;
+  lastResearchedAtLabel?: string | null;
 }
 
-export function CompanyWorkspaceHeader({ company, analysis }: CompanyWorkspaceHeaderProps) {
+export function CompanyWorkspaceHeader({ company, analysis, lastResearchedAtLabel }: CompanyWorkspaceHeaderProps) {
+  const stateLine = [company.industry, company.country].filter(Boolean).join(" · ");
+
   return (
     <div className="border-b bg-card print:hidden">
       <div className="mx-auto w-full max-w-[1400px] px-5 pt-5 sm:px-8 lg:px-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-xs text-muted-foreground print:hidden">
-            <Link href={routes.companies} className="hover:text-foreground">
-              {ui.workspace.breadcrumbCompanies}
-            </Link>
-            <ChevronRight className="size-3" />
-            <span className="text-foreground">{company.name}</span>
-          </nav>
-          <DemoNotice inline className="print:hidden" />
+          <CompanyBreadcrumb slug={company.slug} companyName={company.name} />
+          <DemoBadge className="print:hidden" />
         </div>
 
-        <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">{company.name}</h1>
-              {analysis && <AnalysisStatusBadge status={analysis.status} />}
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">{ui.workspace.subtitle}</p>
-
-            <dl className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <dt>{ui.workspace.analysis}</dt>
-                <dd className="tabular font-medium text-foreground">v{analysis?.version ?? "—"}</dd>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <dt>{ui.workspace.updated}</dt>
-                <dd className="font-medium text-foreground">{analysis?.updatedAtLabel ?? "—"}</dd>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <dt>{ui.workspace.focus}</dt>
-                <dd className="font-medium text-foreground">
-                  {analysis ? researchFocusLabel[analysis.focus] : "—"}
-                </dd>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <dt>{ui.workspace.geography}</dt>
-                <dd className="font-medium text-foreground">
-                  {analysis ? geographyLabel[analysis.geography] : geographyLabel.Brazil}
-                </dd>
-              </div>
-            </dl>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">{company.name}</h1>
+            {stateLine ? <p className="mt-1 text-sm text-muted-foreground">{stateLine}</p> : null}
+            {lastResearchedAtLabel ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {ui.workspace.lastResearched}: <span className="font-medium text-foreground">{lastResearchedAtLabel}</span>
+              </p>
+            ) : analysis?.updatedAtLabel ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {ui.workspace.updated}: <span className="font-medium text-foreground">{analysis.updatedAtLabel}</span>
+              </p>
+            ) : null}
           </div>
 
           <div className="flex shrink-0 items-center gap-2 print:hidden">
@@ -67,7 +45,9 @@ export function CompanyWorkspaceHeader({ company, analysis }: CompanyWorkspaceHe
         </div>
 
         <div className="mt-5">
-          <WorkspaceTabs companySlug={company.slug} />
+          <Suspense fallback={<div className="h-10" />}>
+            <WorkspaceTabs companySlug={company.slug} />
+          </Suspense>
         </div>
       </div>
     </div>

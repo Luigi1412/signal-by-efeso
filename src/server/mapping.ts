@@ -5,6 +5,18 @@ import type { AnalysisStatus, Company, CurrentUser, Geography, RecentAnalysis, R
 import type { AnalysisRecord, CompanyRow, ProfileRow, ResearchRunRecord, WorkspaceRow } from "@/types/database";
 import { RESEARCH_STAGE_SEQUENCE } from "./constants";
 
+export const dbToResearchFocus: Record<string, ResearchFocus> = {
+  general: "General EFESO opportunity scan",
+  manufacturing: "Manufacturing",
+  operational_excellence: "Operational Excellence",
+  supply_chain: "Supply Chain",
+  cost_profitability: "Cost & Profitability",
+  procurement: "Procurement",
+  organization_transformation: "Organization & Transformation",
+  digital_ai: "Digital & AI",
+  other: "Other",
+};
+
 export const researchFocusToDb: Record<ResearchFocus, AnalysisRecord["research_focus"]> = {
   "General EFESO opportunity scan": "general",
   Manufacturing: "manufacturing",
@@ -20,6 +32,12 @@ export const researchFocusToDb: Record<ResearchFocus, AnalysisRecord["research_f
 export function geographyToCountryCode(geography: Geography): string {
   if (geography === "Europe") return "BE";
   return "BR";
+}
+
+export function geographyFromCountryCode(code: string | null | undefined): Geography {
+  if (code === "BE") return "Europe";
+  if (code === "BR") return "Brazil";
+  return "Brazil";
 }
 
 export function analysisStatusFromDb(status: string): AnalysisStatus {

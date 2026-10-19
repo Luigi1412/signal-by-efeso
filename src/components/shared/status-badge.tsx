@@ -63,8 +63,9 @@ export function EvidenceTypeBadge({
   size?: "sm" | "md";
   className?: string;
 }) {
+  const tone: Tone = type === "unverified" ? "neutral" : type;
   return (
-    <StatusBadge tone={type} size={size} className={className}>
+    <StatusBadge tone={tone} size={size} className={className}>
       {evidenceTypeLabel[type]}
     </StatusBadge>
   );

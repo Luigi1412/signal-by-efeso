@@ -19,7 +19,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Login CTA **Continuar com conta EFESO** (when `DEMO_AUTH_MODE=true`) creates a real Supabase Auth session for `mariana@efeso.demo` and bootstraps profile + EFESO Brazil membership.
+Login uses an EFESO corporate email. When `DEMO_AUTH_MODE=true`, local buttons provision synthetic accounts `demo.member@efeso.com` and `demo.admin@efeso.com` (not real people). After `supabase db reset`, run `npm run seed:demo` for the CEO Preview dataset.
 
 ### Environment
 
@@ -32,6 +32,7 @@ See `.env.example`. Never expose `SUPABASE_SERVICE_ROLE_KEY` to the browser. Do 
 | `SUPABASE_SERVICE_ROLE_KEY` | Server only (demo bootstrap) |
 | `DEMO_AUTH_MODE` | Server only |
 | `DEMO_AUTH_PASSWORD` | Server only |
+| `ALLOWED_EMAIL_DOMAINS` | Server only (fail closed if empty) |
 
 ### Useful commands
 

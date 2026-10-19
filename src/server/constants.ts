@@ -6,10 +6,15 @@ export const EFESO_BRAZIL_SLUG = "efeso-brazil";
 export const PIPELINE_VERSION = "v0.2.0-sim";
 export const RESEARCH_POLICY_VERSION = "v0.2.0-demo";
 
-export const DEMO_AUTH_EMAIL = "mariana@efeso.demo";
-export const DEMO_PROFILE_NAME = "Mariana Costa";
-export const DEMO_PROFILE_JOB_TITLE = "Gerente Sênior";
-export const DEMO_MEMBERSHIP_ROLE = "manager" as const;
+export const DEMO_MEMBER_EMAIL = "demo.member@efeso.com";
+export const DEMO_ADMIN_EMAIL = "demo.admin@efeso.com";
+export const DEMO_EXTERNAL_EMAIL = "outsider@gmail.com";
+export const DEMO_AUTH_EMAIL = DEMO_MEMBER_EMAIL;
+
+export const DEMO_MEMBER_PROFILE_NAME = "Demo Member";
+export const DEMO_ADMIN_PROFILE_NAME = "Demo Admin";
+export const DEMO_MEMBER_JOB_TITLE = "Consultor";
+export const DEMO_ADMIN_JOB_TITLE = "Administrador";
 
 export const RESEARCH_STAGE_SEQUENCE = [
   { stage: "entity_resolution", progressPercent: 10 },

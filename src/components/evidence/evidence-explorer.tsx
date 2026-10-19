@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useSyncExternalStore } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SectionHeading } from "@/components/shared/section-heading";
 import { getConflictById, getOpportunityById, getSourceById, getSourcesByIds } from "@/data";
 import { t, ui } from "@/i18n";
@@ -22,6 +22,9 @@ interface EvidenceExplorerProps {
 }
 
 function isPrimaryOnly(claim: EvidenceClaim): boolean {
+  if (claim.origin === "persisted") {
+    return Boolean(claim.persisted?.isPrimarySource);
+  }
   return claim.sourceIds.every((id) => getSourceById(id)?.isPrimary);
 }
 
@@ -41,6 +44,7 @@ function useHydrated() {
 export function EvidenceExplorer({ companySlug, claims, conflicts, signals, initialFilter, initialClaimId }: EvidenceExplorerProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const hydrated = useHydrated();
   const [filter, setFilter] = useState<EvidenceFilterId>(initialFilter);
   const [selectedId, setSelectedId] = useState<string | null>(initialClaimId);
@@ -69,7 +73,10 @@ export function EvidenceExplorer({ companySlug, claims, conflicts, signals, init
   function handleDrawerChange(open: boolean) {
     setDrawerOpen(open);
     if (!open && initialClaimId) {
-      router.replace(pathname, { scroll: false });
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("claim");
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     }
   }
 
@@ -107,10 +114,26 @@ export function EvidenceExplorer({ companySlug, claims, conflicts, signals, init
       {hydrated && (
         <EvidenceDrawer
           claim={selectedClaim}
-          sources={selectedClaim ? getSourcesByIds(selectedClaim.sourceIds) : []}
-          conflict={selectedClaim?.conflictId ? getConflictById(selectedClaim.conflictId) : undefined}
-          relatedSignal={selectedClaim ? signals.find((s) => s.id === selectedClaim.relatedSignalId || s.evidenceClaimId === selectedClaim.id) : undefined}
-          relatedOpportunity={selectedClaim?.relatedOpportunityId ? getOpportunityById(selectedClaim.relatedOpportunityId) : undefined}
+          sources={
+            selectedClaim && selectedClaim.origin !== "persisted"
+              ? getSourcesByIds(selectedClaim.sourceIds)
+              : []
+          }
+          conflict={
+            selectedClaim?.origin !== "persisted" && selectedClaim?.conflictId
+              ? getConflictById(selectedClaim.conflictId)
+              : undefined
+          }
+          relatedSignal={
+            selectedClaim && selectedClaim.origin !== "persisted"
+              ? signals.find((s) => s.id === selectedClaim.relatedSignalId || s.evidenceClaimId === selectedClaim.id)
+              : undefined
+          }
+          relatedOpportunity={
+            selectedClaim?.origin !== "persisted" && selectedClaim?.relatedOpportunityId
+              ? getOpportunityById(selectedClaim.relatedOpportunityId)
+              : undefined
+          }
           companySlug={companySlug}
           open={drawerOpen}
           onOpenChange={handleDrawerChange}

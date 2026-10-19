@@ -1,6 +1,7 @@
 import "server-only";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { assertEfesoAccess, assertEfesoAdmin } from "@/server/access/require-efeso-access";
 
 export type AuthState =
   | { kind: "user"; id: string }
@@ -41,9 +42,11 @@ export async function getAuthUserId(): Promise<string | null> {
 }
 
 export async function requireAuthUserId(): Promise<string> {
-  const userId = await getAuthUserId();
-  if (!userId) {
-    throw new Error("UNAUTHENTICATED");
-  }
-  return userId;
+  const access = await assertEfesoAccess();
+  return access.userId;
+}
+
+export async function requireAdminUserId(): Promise<string> {
+  const access = await assertEfesoAdmin();
+  return access.userId;
 }

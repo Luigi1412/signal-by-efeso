@@ -12,6 +12,37 @@ export interface EvidenceSource {
   geography: Geography;
 }
 
+export interface PersistedEvidenceTrace {
+  claimType: string;
+  verificationStatus: string;
+  reviewStatus: string;
+  claimStatus: string;
+  geographyDisplay: string | null;
+  periodDisplay: string | null;
+  sourcePublisher: string;
+  sourceType: string;
+  sourceTier: string;
+  isPrimarySource: boolean;
+  snapshotTitle: string | null;
+  publicationDate: string | null;
+  capturedAt: string;
+  pageNumber: number | null;
+  sectionTitle: string | null;
+  excerpt: string;
+  contextBefore: string | null;
+  contextAfter: string | null;
+  relationship: string;
+  directness: string;
+  storageKey: string | null;
+  snapshotId: string;
+  researchRunId: string | null;
+  assertionMode: string | null;
+  contentBlockId: string | null;
+  originClaimCandidateId: string | null;
+  originModelRunId: string | null;
+  canonicalUrl: string | null;
+}
+
 export interface EvidenceClaim {
   id: string;
   companyId: string;
@@ -29,6 +60,8 @@ export interface EvidenceClaim {
   relatedSignalId?: string;
   relatedOpportunityId?: string;
   conflictId?: string;
+  origin?: "mock" | "persisted";
+  persisted?: PersistedEvidenceTrace;
 }
 
 export interface ConflictPosition {

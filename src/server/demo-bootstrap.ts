@@ -1,51 +1,87 @@
 import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { getDemoAuthPassword } from "@/lib/supabase/env";
 import {
-  DEMO_AUTH_EMAIL,
-  DEMO_MEMBERSHIP_ROLE,
-  DEMO_PROFILE_JOB_TITLE,
-  DEMO_PROFILE_NAME,
+  DEMO_ADMIN_EMAIL,
+  DEMO_ADMIN_JOB_TITLE,
+  DEMO_ADMIN_PROFILE_NAME,
+  DEMO_EXTERNAL_EMAIL,
+  DEMO_MEMBER_EMAIL,
+  DEMO_MEMBER_JOB_TITLE,
+  DEMO_MEMBER_PROFILE_NAME,
   EFESO_BRAZIL_SLUG,
 } from "@/server/constants";
-import { getDemoAuthPassword } from "@/lib/supabase/env";
+import type { WorkspaceRole } from "@/server/access/roles";
 
-/**
- * Idempotent demo provisioning. Service role only. Never import from client components.
- */
-export async function ensureDemoUser(): Promise<{ email: string; password: string; userId: string }> {
-  const admin = createAdminSupabaseClient();
-  const password = getDemoAuthPassword();
+export type DemoAccountKind = "member" | "admin" | "external";
 
-  const { data: existing, error: listError } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  if (listError) throw listError;
+const DEMO_ACCOUNTS: Record<
+  DemoAccountKind,
+  { email: string; fullName: string; jobTitle: string; role: WorkspaceRole | null }
+> = {
+  member: {
+    email: DEMO_MEMBER_EMAIL,
+    fullName: DEMO_MEMBER_PROFILE_NAME,
+    jobTitle: DEMO_MEMBER_JOB_TITLE,
+    role: "member",
+  },
+  admin: {
+    email: DEMO_ADMIN_EMAIL,
+    fullName: DEMO_ADMIN_PROFILE_NAME,
+    jobTitle: DEMO_ADMIN_JOB_TITLE,
+    role: "admin",
+  },
+  external: {
+    email: DEMO_EXTERNAL_EMAIL,
+    fullName: "External User",
+    jobTitle: "External",
+    role: null,
+  },
+};
 
-  let user = existing.users.find((u) => u.email === DEMO_AUTH_EMAIL);
-
-  if (!user) {
-    const { data: created, error: createError } = await admin.auth.admin.createUser({
-      email: DEMO_AUTH_EMAIL,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name: DEMO_PROFILE_NAME },
-    });
-    if (createError) throw createError;
-    if (!created.user) throw new Error("Demo user creation returned no user.");
-    user = created.user;
-  } else {
-    const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
-      password,
-      email_confirm: true,
-    });
-    if (updateError) throw updateError;
-  }
-
-  await ensureDemoProfileAndMembership(user.id);
-  return { email: DEMO_AUTH_EMAIL, password, userId: user.id };
+async function findAuthUserByEmail(
+  admin: ReturnType<typeof createAdminSupabaseClient>,
+  email: string,
+) {
+  const { data, error } = await admin.auth.admin.listUsers({ perPage: 1000 });
+  if (error) throw error;
+  return data.users.find((user) => user.email?.toLowerCase() === email.toLowerCase()) ?? null;
 }
 
-export async function ensureDemoProfileAndMembership(userId: string): Promise<void> {
+async function ensureAuthUser(input: {
+  email: string;
+  fullName: string;
+  password: string;
+}): Promise<string> {
   const admin = createAdminSupabaseClient();
+  const user = await findAuthUserByEmail(admin, input.email);
+  if (!user) {
+    const { data, error } = await admin.auth.admin.createUser({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { full_name: input.fullName },
+    });
+    if (error) throw error;
+    if (!data.user) throw new Error("Demo user creation returned no user.");
+    return data.user.id;
+  }
+  const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { full_name: input.fullName },
+  });
+  if (updateError) throw updateError;
+  return user.id;
+}
 
+async function ensureDemoMembership(input: {
+  userId: string;
+  role: WorkspaceRole;
+  fullName: string;
+  jobTitle: string;
+}): Promise<void> {
+  const admin = createAdminSupabaseClient();
   const { data: workspace, error: workspaceError } = await admin
     .from("workspaces")
     .select("id")
@@ -58,9 +94,9 @@ export async function ensureDemoProfileAndMembership(userId: string): Promise<vo
 
   const { error: profileError } = await admin.from("profiles").upsert(
     {
-      id: userId,
-      full_name: DEMO_PROFILE_NAME,
-      job_title: DEMO_PROFILE_JOB_TITLE,
+      id: input.userId,
+      full_name: input.fullName,
+      job_title: input.jobTitle,
       preferred_locale: "pt-BR",
     },
     { onConflict: "id" },
@@ -71,23 +107,51 @@ export async function ensureDemoProfileAndMembership(userId: string): Promise<vo
     .from("workspace_memberships")
     .select("id")
     .eq("workspace_id", workspace.id)
-    .eq("user_id", userId)
+    .eq("user_id", input.userId)
     .maybeSingle();
   if (membershipLookupError) throw membershipLookupError;
 
   if (!membership) {
     const { error: insertError } = await admin.from("workspace_memberships").insert({
       workspace_id: workspace.id,
-      user_id: userId,
-      role: DEMO_MEMBERSHIP_ROLE,
+      user_id: input.userId,
+      role: input.role,
       status: "active",
+      provisioned_reason: "demo_seed",
     });
     if (insertError) throw insertError;
-  } else {
-    const { error: updateError } = await admin
-      .from("workspace_memberships")
-      .update({ role: DEMO_MEMBERSHIP_ROLE, status: "active" })
-      .eq("id", membership.id);
-    if (updateError) throw updateError;
+    return;
   }
+
+  const { error: updateError } = await admin
+    .from("workspace_memberships")
+    .update({ role: input.role, status: "active", provisioned_reason: "demo_seed" })
+    .eq("id", membership.id);
+  if (updateError) throw updateError;
+}
+
+export async function ensureDemoAccount(
+  kind: DemoAccountKind,
+): Promise<{ email: string; password: string; userId: string }> {
+  const account = DEMO_ACCOUNTS[kind];
+  const password = getDemoAuthPassword();
+  const userId = await ensureAuthUser({
+    email: account.email,
+    fullName: account.fullName,
+    password,
+  });
+  if (account.role) {
+    await ensureDemoMembership({
+      userId,
+      role: account.role,
+      fullName: account.fullName,
+      jobTitle: account.jobTitle,
+    });
+  }
+  return { email: account.email, password, userId };
+}
+
+/** Default CEO Preview login is the authorized member account. */
+export async function ensureDemoUser(): Promise<{ email: string; password: string; userId: string }> {
+  return ensureDemoAccount("member");
 }

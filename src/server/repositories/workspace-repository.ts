@@ -22,3 +22,10 @@ export async function getWorkspaceById(id: string): Promise<WorkspaceRow | null>
   if (error) throw error;
   return data;
 }
+
+export async function getWorkspaceByIdForPipeline(id: string): Promise<WorkspaceRow | null> {
+  const { createPipelineAdminClient } = await import("@/lib/supabase/pipeline-admin");
+  const { data, error } = await createPipelineAdminClient().from("workspaces").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data as WorkspaceRow | null;
+}

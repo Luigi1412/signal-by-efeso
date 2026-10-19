@@ -1,0 +1,23 @@
+# Release checklist — Signal 0.9.0
+
+- [ ] Auth (Supabase) configurada
+- [ ] Allowed domains (`efeso.com` ou lista acordada)
+- [ ] RLS sem regressão (`npm run test:rls` e `test:access-control`)
+- [ ] DB migrations aplicadas
+- [ ] Storage `source-files` disponível
+- [ ] OpenAI: chave presente **ou** status PENDING explícito
+- [ ] Demo vs dados reais: badge Demo só em sintético; não misturar
+- [ ] `npm run typecheck`
+- [ ] `npm run lint`
+- [ ] `npm run test:extraction` (críticos)
+- [ ] `npm run test:demo-consistency`
+- [ ] `npm run test:product-integrity`
+- [ ] `npm run release:check`
+- [ ] `npm run build`
+- [ ] Browser smoke member (login, home, sinais, conta, inteligência, oportunidade, ação, evidência, conhecimento, logout; sem nav admin)
+- [ ] Browser smoke admin (app + `/admin` + `/admin/release-health` + labs; sem rota quebrada)
+- [ ] Browser negativo outsider (auth restrita, sem dados)
+- [ ] Links de fonte (Abrir fonte) com erro elegante se indisponível
+- [ ] Admin separado de member
+- [ ] Mobile básico (sem corte de cards, drawers usáveis)
+- [ ] CEO demo readiness (`docs/CEO_DEMO_FLOW.md` + Vale coerente)

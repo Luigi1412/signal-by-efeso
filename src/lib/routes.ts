@@ -2,11 +2,30 @@
 
 export const routes = {
   login: "/login",
+  accessRestricted: "/access-restricted",
   home: "/",
   companies: "/companies",
+  radar: "/radar",
+  expertise: "/expertise",
   newAnalysis: "/analysis/new",
   knowledgeBase: "/knowledge-base",
+  efesoKnowledge: "/knowledge/efeso",
+  signals: "/signals",
+  accountIntelligence: "/accounts/intelligence",
+  opportunities: "/opportunities",
+  actions: "/actions",
   admin: "/admin",
+  releaseHealth: "/admin/release-health",
+  extractionLab: "/admin/extraction-lab",
+  knowledgeLab: "/admin/knowledge-lab",
+  signalLab: "/admin/signal-lab",
+  accountIntelligenceLab: "/admin/account-intelligence-lab",
+  efesoFitLab: "/admin/efeso-fit-lab",
+  opportunityLab: "/admin/opportunity-lab",
+  relationshipLab: "/admin/relationship-lab",
+  actionLab: "/admin/action-lab",
+  researchLab: "/admin/research-lab",
+  research: (id: string) => `/research/${encodeURIComponent(id)}`,
   analysisResolve: (slug: string, analysisId?: string) =>
     analysisId
       ? `/analysis/${slug}/resolve?analysis=${encodeURIComponent(analysisId)}`
@@ -21,13 +40,28 @@ export const routes = {
   analysisUnavailable: "/analysis/unavailable",
   company: (slug: string, analysisId?: string) =>
     analysisId ? `/companies/${slug}?analysis=${encodeURIComponent(analysisId)}` : `/companies/${slug}`,
-  companyTab: (slug: string, tab: WorkspaceTabId) =>
-    tab === "overview" ? `/companies/${slug}` : `/companies/${slug}/${tab}`,
+  companyTab: (slug: string, tab: WorkspaceTabId, analysisId?: string) => {
+    const path = tab === "overview" ? `/companies/${slug}` : `/companies/${slug}/${tab}`;
+    return analysisId ? `${path}?analysis=${encodeURIComponent(analysisId)}` : path;
+  },
 } as const;
 
-export const workspaceTabs = ["overview", "signals", "opportunities", "evidence", "report", "versions"] as const;
+export const workspaceTabs = [
+  "overview",
+  "signals",
+  "intelligence",
+  "opportunities",
+  "actions",
+  "evidence",
+] as const;
 
-export type WorkspaceTabId = (typeof workspaceTabs)[number];
+export const companyWorkspaceRoutes = [
+  ...workspaceTabs,
+  "report",
+  "versions",
+] as const;
+
+export type WorkspaceTabId = (typeof companyWorkspaceRoutes)[number];
 
 export function slugify(input: string): string {
   return input

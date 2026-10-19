@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { allowMockFallback } from "@/lib/supabase/env";
 import { routes } from "@/lib/routes";
+import { AccessDeniedError, assertEfesoAccess, publicAccessErrorMessage } from "@/server/access/require-efeso-access";
 import {
   completePersistedResearch,
   confirmCompanyAndStartResearch,
@@ -22,6 +23,14 @@ export type StartAnalysisActionResult =
   | { ok: false; reason: "unauthenticated" | "not_configured" | "invalid" | "fallback" };
 
 export async function startAnalysisAction(raw: CreateDraftAnalysisInput): Promise<StartAnalysisActionResult> {
+  try {
+    await assertEfesoAccess();
+  } catch (error) {
+    if (error instanceof AccessDeniedError && error.reason === "unauthenticated") {
+      return { ok: false, reason: "unauthenticated" };
+    }
+    return { ok: false, reason: "unauthenticated" };
+  }
   const parsed = createDraftAnalysisInput.safeParse(raw);
   if (!parsed.success) {
     return { ok: false, reason: "invalid" };
@@ -56,8 +65,8 @@ export async function confirmCompanyAction(analysisId: string): Promise<{ error:
     result = await confirmCompanyAndStartResearch(parsed.data.analysisId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível confirmar a empresa.";
-    if (message === "UNAUTHENTICATED") {
-      return { error: "Entre com a conta EFESO para continuar." };
+    if (message === "UNAUTHENTICATED" || error instanceof AccessDeniedError) {
+      return { error: publicAccessErrorMessage(error) };
     }
     return { error: message };
   }
@@ -78,6 +87,7 @@ export async function persistResearchProgressAction(raw: {
     await persistResearchProgress(parsed.data);
     return {};
   } catch (error) {
+    if (error instanceof AccessDeniedError) return { error: publicAccessErrorMessage(error) };
     const message = error instanceof Error ? error.message : "Falha ao persistir progresso.";
     return { error: message };
   }
@@ -93,6 +103,7 @@ export async function completeResearchAction(raw: {
     await completePersistedResearch(parsed.data);
     return {};
   } catch (error) {
+    if (error instanceof AccessDeniedError) return { error: publicAccessErrorMessage(error) };
     const message = error instanceof Error ? error.message : "Falha ao concluir a pesquisa.";
     return { error: message };
   }

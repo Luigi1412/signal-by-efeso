@@ -28,6 +28,19 @@ export async function getAnalysisById(workspaceId: string, analysisId: string): 
   return data;
 }
 
+export async function getAnalysisByIdForPipeline(workspaceId: string, analysisId: string): Promise<AnalysisRecord | null> {
+  const { createPipelineAdminClient } = await import("@/lib/supabase/pipeline-admin");
+  const { data, error } = await createPipelineAdminClient()
+    .from("analyses")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("id", analysisId)
+    .is("archived_at", null)
+    .maybeSingle();
+  if (error) throw error;
+  return data as AnalysisRecord | null;
+}
+
 export async function getLatestAnalysisForCompany(
   workspaceId: string,
   companyId: string,

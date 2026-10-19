@@ -1,28 +1,34 @@
 import { Target } from "lucide-react";
-import { OpportunityCard } from "@/components/opportunities/opportunity-card";
-import { DemoNotice } from "@/components/shared/demo-notice";
+import { CompanyOpportunityPanel } from "@/components/opportunities/company-opportunity-panel";
+import { DemoBadge } from "@/components/shared/demo-badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SectionHeading } from "@/components/shared/section-heading";
-import { WorkspaceUnavailable } from "@/components/workspace/workspace-unavailable";
-import { getOpportunitiesForCompany } from "@/data";
 import { t, ui } from "@/i18n";
-import { opportunityStrengthBand } from "@/lib/labels";
 import { resolveWorkspace, workspaceStaticParams } from "@/lib/workspace";
+import { isPersistenceUnavailable } from "@/server/persistence-error";
+import { getCompanyOpportunities } from "@/server/services/opportunity-query-service";
+import { resolvePersistedCompanyId } from "@/server/services/account-query-service";
+import type { OpportunityDetail } from "@/server/opportunities/types";
 
 export function generateStaticParams() {
   return workspaceStaticParams();
 }
 
+export const dynamic = "force-dynamic";
+
 export default async function OpportunitiesPage({ params }: PageProps<"/companies/[slug]/opportunities">) {
   const { slug } = await params;
-  const { company, analysis } = resolveWorkspace(slug);
+  const { company } = resolveWorkspace(slug);
 
-  if (!analysis) {
-    return <WorkspaceUnavailable company={company} section={ui.workspace.tabs.opportunities} />;
+  let opportunities: OpportunityDetail[] = [];
+  try {
+    const persistedId = await resolvePersistedCompanyId(slug);
+    if (persistedId) opportunities = await getCompanyOpportunities(persistedId);
+  } catch (error) {
+    if (!isPersistenceUnavailable(error)) throw error;
   }
 
-  const opportunities = getOpportunitiesForCompany(company.id);
-  const highCount = opportunities.filter((o) => opportunityStrengthBand(o.score) === "forte").length;
+  const highCount = opportunities.filter((item) => item.relevanceLevel === "high").length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -30,21 +36,12 @@ export default async function OpportunitiesPage({ params }: PageProps<"/companie
         eyebrow={ui.opportunities.eyebrow}
         title={ui.opportunities.title}
         description={t(ui.opportunities.description, { count: opportunities.length, high: highCount })}
-        actions={<DemoNotice inline />}
+        actions={<DemoBadge />}
       />
-
       {opportunities.length === 0 ? (
-        <EmptyState
-          icon={Target}
-          title={ui.opportunities.emptyTitle}
-          description={ui.opportunities.emptyDescription}
-        />
+        <EmptyState icon={Target} title={ui.opportunities.emptyTitle} description={ui.opportunities.emptyDescription} />
       ) : (
-        <div className="flex flex-col gap-6">
-          {opportunities.map((opportunity) => (
-            <OpportunityCard key={opportunity.id} opportunity={opportunity} companySlug={company.slug} />
-          ))}
-        </div>
+        <CompanyOpportunityPanel opportunities={opportunities} companySlug={company.slug} />
       )}
     </div>
   );

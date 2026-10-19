@@ -1,6 +1,5 @@
 import "server-only";
 import {
-  currentUser,
   getCompanies,
   getCompanyById,
   getCompanyBySlug,
@@ -10,7 +9,10 @@ import {
 import { allowMockFallback, isSupabaseConfigured } from "@/lib/supabase/env";
 import { PersistenceUnavailableError } from "@/server/persistence-error";
 import {
+  analysisStatusFromDb,
   completedCountFromRun,
+  dbToResearchFocus,
+  geographyFromCountryCode,
   geographyToCountryCode,
   researchFocusToDb,
   stageForPhaseIndex,
@@ -18,6 +20,7 @@ import {
   toRecentAnalysis,
   toUiCompany,
 } from "@/server/mapping";
+import { formatDate } from "@/lib/labels";
 import * as analysisRepository from "@/server/repositories/analysis-repository";
 import * as companyRepository from "@/server/repositories/company-repository";
 import * as profileRepository from "@/server/repositories/profile-repository";
@@ -25,7 +28,7 @@ import * as researchRunRepository from "@/server/repositories/research-run-repos
 import * as workspaceRepository from "@/server/repositories/workspace-repository";
 import { getAuthState, requireAuthUserId } from "@/server/session";
 import type { CreateDraftAnalysisInput } from "@/server/validation";
-import type { Company, CurrentUser, RecentAnalysis } from "@/types";
+import type { AnalysisStatus, Company, CurrentUser, Geography, RecentAnalysis, ResearchFocus } from "@/types";
 import type { AnalysisRecord, ResearchRunRecord } from "@/types/database";
 
 export type DraftAnalysisResult =
@@ -43,7 +46,6 @@ const UNAVAILABLE_USER: CurrentUser = {
 
 export async function getSidebarUser(): Promise<CurrentUser> {
   if (!isSupabaseConfigured()) {
-    if (allowMockFallback()) return currentUser;
     return UNAVAILABLE_USER;
   }
   try {
@@ -52,10 +54,8 @@ export async function getSidebarUser(): Promise<CurrentUser> {
       workspaceRepository.getCurrentWorkspace(),
     ]);
     if (profile) return toCurrentUser(profile, workspace);
-    if (allowMockFallback()) return currentUser;
     return UNAVAILABLE_USER;
   } catch {
-    if (allowMockFallback()) return currentUser;
     return UNAVAILABLE_USER;
   }
 }
@@ -284,4 +284,39 @@ export async function getWorkspaceCompanies(): Promise<Company[]> {
     if (allowMockFallback()) return getCompanies();
     throw new PersistenceUnavailableError();
   }
+}
+
+export interface WorkspaceHeaderAnalysis {
+  status: AnalysisStatus;
+  version: string;
+  updatedAtLabel: string;
+  focus: ResearchFocus;
+  geography: Geography;
+}
+
+export async function getPersistedCompanyWorkspace(
+  slug: string,
+): Promise<{ company: Company; analysis?: WorkspaceHeaderAnalysis; lastResearchedAtLabel?: string | null } | null> {
+  if (!isSupabaseConfigured()) throw new PersistenceUnavailableError();
+  const workspace = await workspaceRepository.getCurrentWorkspace();
+  if (!workspace) throw new PersistenceUnavailableError();
+  const row = await companyRepository.getCompanyBySlug(workspace.id, slug);
+  if (!row) return null;
+  const company = toUiCompany(row);
+  const { getCompanyLastResearched } = await import("@/server/external-research/persistence");
+  const lastResearched = await getCompanyLastResearched(workspace.id, row.id);
+  const lastResearchedAtLabel = lastResearched ? formatDate(lastResearched) : null;
+  const analysis = await analysisRepository.getLatestAnalysisForCompany(workspace.id, row.id);
+  if (!analysis) return { company, lastResearchedAtLabel };
+  return {
+    company,
+    lastResearchedAtLabel,
+    analysis: {
+      status: analysisStatusFromDb(analysis.status),
+      version: "1",
+      updatedAtLabel: formatDate(analysis.updated_at),
+      focus: dbToResearchFocus[analysis.research_focus] ?? "General EFESO opportunity scan",
+      geography: geographyFromCountryCode(analysis.primary_country_code),
+    },
+  };
 }

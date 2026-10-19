@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { ui } from "@/i18n";
 import { routes, workspaceTabs, type WorkspaceTabId } from "@/lib/routes";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,8 @@ function resolveActiveTab(pathname: string, companySlug: string): WorkspaceTabId
 
 export function WorkspaceTabs({ companySlug }: WorkspaceTabsProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const analysisId = searchParams.get("analysis") ?? undefined;
   const active = resolveActiveTab(pathname, companySlug);
 
   return (
@@ -28,7 +30,7 @@ export function WorkspaceTabs({ companySlug }: WorkspaceTabsProps) {
         return (
           <Link
             key={tab}
-            href={routes.companyTab(companySlug, tab)}
+            href={routes.companyTab(companySlug, tab, analysisId)}
             aria-current={isActive ? "page" : undefined}
             className={cn(
               "relative flex h-10 shrink-0 items-center border-b-2 px-3 text-sm font-medium transition-colors outline-none",

@@ -1,17 +1,40 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowRight } from "lucide-react";
-import { DemoLoginButton } from "@/components/auth/demo-login-button";
+import { redirect } from "next/navigation";
+import { LoginForm } from "@/components/auth/login-form";
 import { Brand } from "@/components/layout/brand";
-import { Button } from "@/components/ui/button";
 import { ui } from "@/i18n";
-import { isDemoAuthMode } from "@/lib/supabase/env";
+import { isDemoAuthMode, isSupabaseConfigured } from "@/lib/supabase/env";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { routes } from "@/lib/routes";
+import { getAllowedEmailDomains, isAllowedCorporateEmail } from "@/server/access/email-domains";
 
 export const metadata: Metadata = { title: ui.login.title };
 export const dynamic = "force-dynamic";
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = await createServerSupabaseClient();
+      const { data } = await supabase.auth.getUser();
+      if (data.user?.email) {
+        const allowed = getAllowedEmailDomains();
+        if (isAllowedCorporateEmail(data.user.email, allowed)) {
+          redirect(routes.home);
+        }
+        redirect(routes.accessRestricted);
+      }
+    } catch {
+      // Show the login form when the session cannot be read.
+    }
+  }
+
+  const query = await searchParams;
+  const expired = query.expired === "1";
+
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="flex h-16 items-center px-6 sm:px-10">
@@ -25,18 +48,10 @@ export default function LoginPage() {
             {ui.login.headline}
           </h1>
           <p className="mt-4 text-base text-muted-foreground">{ui.login.supporting}</p>
+          {expired ? <p className="mt-3 text-sm text-muted-foreground">{ui.login.sessionExpired}</p> : null}
 
           <div className="mt-10">
-            {isDemoAuthMode() ? (
-              <DemoLoginButton />
-            ) : (
-              <Button asChild variant="brand" size="lg" className="h-11 w-full justify-between px-4 text-sm sm:w-auto sm:min-w-72">
-                <Link href={routes.home}>
-                  {ui.login.cta}
-                  <ArrowRight data-icon="inline-end" />
-                </Link>
-              </Button>
-            )}
+            <LoginForm demoMode={isDemoAuthMode()} />
             <p className="mt-4 text-xs text-muted-foreground">{ui.login.restricted}</p>
           </div>
         </div>
