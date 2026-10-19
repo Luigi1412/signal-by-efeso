@@ -47,6 +47,7 @@
     "test:research-live": "tsx tests/research-live.ts",
     "test:suzano-e2e": "node --require ./tests/stub-server-only.cjs --import tsx tests/suzano-e2e.ts",
     "test:embraer-e2e": "node --require ./tests/stub-server-only.cjs --import tsx tests/embraer-e2e.ts",
+    "test:klabin-e2e": "node --require ./tests/stub-server-only.cjs --import tsx tests/klabin-e2e.ts",
     "test:demo-consistency": "npx supabase test db --local supabase/tests/demo_consistency.sql",
     "test:product-integrity": "npx supabase test db --local supabase/tests/product_integrity.sql",
     "release:check": "tsx --env-file=.env.local scripts/release-check.ts"
