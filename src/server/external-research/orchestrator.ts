@@ -75,6 +75,9 @@ export async function startExternalCompanyResearch(input: {
   industry?: string | null;
   existingCompanyId?: string | null;
   selectedDomain?: string | null;
+  /** User confirmed identity when catalog/workspace resolution was incomplete. */
+  confirmUnresolved?: boolean;
+  additionalInstructions?: string | null;
   timeHorizonMonths?: number;
 }): Promise<ExternalResearchRunRow> {
   const limits = getExternalResearchLimits();
@@ -102,7 +105,9 @@ export async function startExternalCompanyResearch(input: {
   });
   const payload: Record<string, unknown> = {};
   if (input.existingCompanyId) payload.existingCompanyId = input.existingCompanyId;
-  if (input.selectedDomain) payload.selectedDomain = input.selectedDomain;
+  if (input.selectedDomain) payload.selectedDomain = normalizeOfficialDomain(input.selectedDomain);
+  if (input.confirmUnresolved) payload.userConfirmed = true;
+  if (input.additionalInstructions?.trim()) payload.additionalInstructions = input.additionalInstructions.trim();
   if (Object.keys(payload).length > 0) {
     await updateResearchRun(input.workspaceId, run.id, { resolution_payload: payload });
   }
@@ -330,9 +335,37 @@ async function inferResumeStatus(run: ExternalResearchRunRow): Promise<ExternalR
   return "generating_signals";
 }
 
+function normalizeOfficialDomain(value: string | null | undefined): string {
+  if (!value) return "";
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    ?.replace(/\/$/, "") ?? "";
+}
+
+function manualCandidateFromRun(run: ExternalResearchRunRow, domain: string | null): EntityCandidate {
+  return {
+    canonicalName: run.requested_query,
+    officialDomain: normalizeOfficialDomain(domain),
+    headquartersCountry: run.requested_country ?? "",
+    industry: run.requested_industry ?? "",
+    aliases: [],
+    decisionBasis: domain ? ["user-provided domain"] : ["user-confirmed identity"],
+    existingCompanyId: null,
+    existingSlug: null,
+  };
+}
+
 async function phaseResolveEntity(run: ExternalResearchRunRow): Promise<ExternalResearchRunRow> {
   const existing = await loadExisting(run.workspace_id);
-  const selectedDomain = typeof run.resolution_payload.selectedDomain === "string" ? run.resolution_payload.selectedDomain : null;
+  const selectedDomain =
+    typeof run.resolution_payload.selectedDomain === "string"
+      ? normalizeOfficialDomain(run.resolution_payload.selectedDomain)
+      : null;
+  const userConfirmed = run.resolution_payload.userConfirmed === true;
   const existingCompanyId =
     typeof run.resolution_payload.existingCompanyId === "string" ? run.resolution_payload.existingCompanyId : null;
   let resolution = resolveCompanyEntity({
@@ -343,8 +376,14 @@ async function phaseResolveEntity(run: ExternalResearchRunRow): Promise<External
   });
   if (selectedDomain && resolution.kind !== "resolved") {
     const pool = resolution.kind === "ambiguous" ? resolution.candidates : resolution.suggestions;
-    const picked = pool.find((item) => item.officialDomain === selectedDomain);
+    const picked = pool.find((item) => normalizeOfficialDomain(item.officialDomain) === selectedDomain);
     if (picked) resolution = { kind: "resolved", candidate: picked };
+    else if (userConfirmed || resolution.kind === "unresolved") {
+      resolution = { kind: "resolved", candidate: manualCandidateFromRun(run, selectedDomain) };
+    }
+  }
+  if (userConfirmed && resolution.kind !== "resolved") {
+    resolution = { kind: "resolved", candidate: manualCandidateFromRun(run, selectedDomain) };
   }
   if (existingCompanyId) {
     const match = existing.find((row) => row.id === existingCompanyId);
@@ -370,7 +409,10 @@ async function phaseResolveEntity(run: ExternalResearchRunRow): Promise<External
     return (await transitionRun(run.workspace_id, run.id, "resolving_entity", {
       status: "needs_user_resolution",
       failure_code: "ENTITY_AMBIGUOUS",
-      failure_reason: "Há mais de uma empresa possível. Escolha a identidade correta.",
+      failure_reason:
+        resolution.kind === "ambiguous"
+          ? "Há mais de uma empresa possível. Escolha a identidade correta."
+          : "Não foi possível confirmar a empresa automaticamente. Informe o website ou confirme os dados.",
       resolution_payload: {
         ...run.resolution_payload,
         kind: resolution.kind,

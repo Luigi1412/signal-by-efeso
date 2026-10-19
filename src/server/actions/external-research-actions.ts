@@ -28,6 +28,8 @@ const queryInput = z.object({
   industry: z.string().trim().max(120).optional(),
   existingSlug: z.string().trim().max(80).optional(),
   selectedDomain: z.string().trim().max(200).optional(),
+  confirmUnresolved: z.boolean().optional(),
+  instructions: z.string().trim().max(2000).optional(),
 });
 
 export type PreviewResearchResult =
@@ -102,6 +104,8 @@ export async function startExternalResearchAction(raw: unknown): Promise<{ ok: t
       industry: parsed.data.industry,
       existingCompanyId,
       selectedDomain: parsed.data.selectedDomain ?? null,
+      confirmUnresolved: parsed.data.confirmUnresolved === true,
+      additionalInstructions: parsed.data.instructions ?? null,
     });
     return { ok: true, runId: run.id };
   } catch (error) {

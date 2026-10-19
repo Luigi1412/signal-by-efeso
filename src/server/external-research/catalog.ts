@@ -81,4 +81,20 @@ export const PUBLIC_COMPANY_CATALOG: CompanyIdentity[] = [
     aliases: ["mercury systems", "mercury"],
     decisionBasis: ["partial name mercury"],
   },
+  {
+    canonicalName: "Toyota Motor Corporation",
+    officialDomain: "toyota-global.com",
+    headquartersCountry: "JP",
+    industry: "Automotivo",
+    aliases: ["toyota", "toyota motor", "toyota motor corporation"],
+    decisionBasis: ["normalized name", "official domain toyota-global.com"],
+  },
+  {
+    canonicalName: "Toyota do Brasil Ltda.",
+    officialDomain: "toyota.com.br",
+    headquartersCountry: "BR",
+    industry: "Automotivo",
+    aliases: ["toyota", "toyota brasil", "toyota do brasil"],
+    decisionBasis: ["normalized name", "official domain toyota.com.br"],
+  },
 ];

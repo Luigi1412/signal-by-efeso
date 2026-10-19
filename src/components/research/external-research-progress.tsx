@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ui } from "@/i18n";
 import { routes } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import {
   cancelExternalResearchAction,
   resolveResearchEntityAction,
+  startExternalResearchAction,
   tickExternalResearchAction,
   type ResearchView,
 } from "@/server/actions/external-research-actions";
@@ -27,10 +29,38 @@ const PHASE_LABELS: Record<(typeof RESEARCH_PHASES)[number]["labelKey"], string>
   preparingNextSteps: ui.externalResearch.phases.preparingNextSteps,
 };
 
+function phaseDetail(view: ResearchView, status: (typeof RESEARCH_PHASES)[number]["status"]): string | null {
+  if (status === "discovering_sources" && view.sourceCount > 0) {
+    return `${view.sourceCount} fontes encontradas`;
+  }
+  if (status === "reviewing_sources" && view.acceptedCount > 0) {
+    return `${view.acceptedCount} fontes retidas`;
+  }
+  if (status === "extracting_claims" && (view.counts?.claims ?? 0) > 0) {
+    return `${view.counts?.claims} evidências identificadas`;
+  }
+  if (status === "generating_signals" && (view.counts?.signals ?? 0) > 0) {
+    return `${view.counts?.signals} sinais em avaliação`;
+  }
+  if (status === "generating_opportunities" && (view.counts?.opportunities ?? 0) > 0) {
+    return `${view.counts?.opportunities} oportunidades em avaliação`;
+  }
+  return null;
+}
+
+function sourceStatusLabel(status: string, rejectionReason: string | null): string {
+  if (status === "rejected") {
+    return rejectionReason ? `Descartada — ${rejectionReason}` : "Descartada";
+  }
+  if (status === "accepted" || status === "ingested" || status === "processed") return "Retida";
+  return status;
+}
+
 export function ExternalResearchProgress({ initial }: { initial: ResearchView }) {
   const [view, setView] = useState(initial);
   const [tickKey, setTickKey] = useState(0);
   const [pending, startTransition] = useTransition();
+  const [manualDomain, setManualDomain] = useState("");
 
   useEffect(() => {
     const terminal = ["completed", "partial", "failed", "cancelled", "needs_user_resolution"].includes(view.status);
@@ -48,71 +78,123 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
   const currentIndex = RESEARCH_PHASES.findIndex((phase) => phase.status === view.status);
   const done = view.status === "completed" || view.status === "partial";
   const failed = view.status === "failed" || view.status === "cancelled";
-  const progress = done ? 1 : failed ? Math.max(currentIndex, 0) / RESEARCH_PHASES.length : (Math.max(currentIndex, 0) + 0.35) / RESEARCH_PHASES.length;
+  const progress = done
+    ? 1
+    : failed
+      ? Math.max(currentIndex, 0) / RESEARCH_PHASES.length
+      : (Math.max(currentIndex, 0) + 0.35) / RESEARCH_PHASES.length;
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_300px] lg:gap-12">
+    <div className="grid gap-10 lg:grid-cols-[1fr_280px] lg:gap-14">
       <div>
         <div className="eyebrow mb-3">{ui.externalResearch.eyebrow}</div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]">
-          {done ? ui.externalResearch.completedHeadline : failed ? ui.externalResearch.failed : ui.externalResearch.headline}
+          {done
+            ? ui.externalResearch.completedHeadline
+            : failed
+              ? ui.externalResearch.failed
+              : ui.externalResearch.headline}
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
           {done
             ? view.status === "partial"
-              ? view.failureReason ?? ui.externalResearch.partialMessage
+              ? (view.failureReason ?? ui.externalResearch.partialMessage)
               : ui.externalResearch.completedSupporting
             : failed
-              ? view.failureReason ?? ui.externalResearch.failed
-              : view.memberProgress ?? ui.externalResearch.supporting}
+              ? (view.failureReason ?? ui.externalResearch.failed)
+              : (view.memberProgress ?? ui.externalResearch.supporting)}
         </p>
-        {!done && !failed && view.enrichmentInProgress && view.initialAnalysisAvailable ? (
-          <p className="mt-2 text-xs text-muted-foreground">{ui.externalResearch.enrichmentInProgress}</p>
-        ) : null}
-        {!done && !failed && view.initialAnalysisAvailable ? (
-          <p className="mt-1 text-xs font-medium text-foreground">{ui.externalResearch.initialAnalysisAvailable}</p>
-        ) : null}
 
-        <div className="mt-5 h-1 overflow-hidden rounded-full bg-foreground/8" role="progressbar" aria-valuenow={Math.round(progress * 100)}>
-          <div className={cn("h-full rounded-full transition-[width] duration-150", done ? "bg-verified" : "bg-foreground")} style={{ width: `${progress * 100}%` }} />
+        <div
+          className="mt-5 h-1 overflow-hidden rounded-full bg-foreground/8"
+          role="progressbar"
+          aria-valuenow={Math.round(progress * 100)}
+        >
+          <div
+            className={cn("h-full rounded-full transition-[width] duration-150", done ? "bg-verified" : "bg-foreground")}
+            style={{ width: `${progress * 100}%` }}
+          />
         </div>
 
         {view.status === "needs_user_resolution" ? (
-          <div className="mt-6 rounded-lg border bg-card p-4">
-            <p className="text-sm font-medium">{ui.externalResearch.chooseCompany}</p>
-            <ul className="mt-3 space-y-2">
-              {view.candidates.map((candidate) => (
-                <li key={candidate.domain} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
-                  <div>
-                    <p className="text-sm">{candidate.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {[candidate.country, candidate.industry, candidate.domain].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => {
-                      startTransition(async () => {
-                        const result = await resolveResearchEntityAction({ runId: view.id, domain: candidate.domain });
+          <div className="mt-6 border-t pt-6">
+            <p className="text-sm font-medium">
+              {view.candidates.length > 0 ? ui.companyReport.ambiguousTitle : ui.companyReport.unresolvedWarning}
+            </p>
+            {view.candidates.length > 0 ? (
+              <ul className="mt-4 divide-y border-y">
+                {view.candidates.map((candidate) => (
+                  <li key={candidate.domain || candidate.name} className="flex items-center justify-between gap-2 py-3">
+                    <div>
+                      <p className="text-sm font-medium">{candidate.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {[candidate.country, candidate.domain].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => {
+                        startTransition(async () => {
+                          const result = await resolveResearchEntityAction({ runId: view.id, domain: candidate.domain });
+                          if (result.ok) {
+                            const next = await tickExternalResearchAction(view.id);
+                            if (next.ok) setView(next.run);
+                          }
+                        });
+                      }}
+                    >
+                      Selecionar
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="mt-4 flex flex-col gap-3">
+                <Input
+                  value={manualDomain}
+                  onChange={(event) => setManualDomain(event.target.value)}
+                  placeholder="empresa.com.br"
+                  className="h-10 max-w-sm"
+                />
+                <Button
+                  type="button"
+                  variant="brand"
+                  disabled={pending}
+                  onClick={() => {
+                    startTransition(async () => {
+                      const domain = manualDomain.trim();
+                      if (domain) {
+                        const result = await resolveResearchEntityAction({ runId: view.id, domain });
                         if (result.ok) {
                           const next = await tickExternalResearchAction(view.id);
                           if (next.ok) setView(next.run);
+                          return;
                         }
+                      }
+                      const restarted = await startExternalResearchAction({
+                        query: view.query,
+                        confirmUnresolved: true,
+                        selectedDomain: domain || undefined,
                       });
-                    }}
-                  >
-                    {ui.externalResearch.startAnalysis}
-                  </Button>
-                </li>
-              ))}
-            </ul>
+                      if (restarted.ok) {
+                        const next = await tickExternalResearchAction(restarted.runId);
+                        if (next.ok) setView(next.run);
+                      }
+                    });
+                  }}
+                >
+                  {ui.companyReport.continueAnyway}
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
           <ol className="mt-8 flex flex-col">
             {RESEARCH_PHASES.map((phase, index) => {
               const status = done || index < currentIndex ? "done" : index === currentIndex ? "active" : "pending";
+              const detail = status === "active" || status === "done" ? phaseDetail(view, phase.status) : null;
               return (
                 <li key={phase.status} className="relative flex gap-4">
                   <div className="flex flex-col items-center">
@@ -127,10 +209,13 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
                       {status === "done" ? <Check className="size-3" strokeWidth={2.5} /> : null}
                       {status === "active" ? <span className="size-1.5 animate-pulse rounded-full bg-foreground" /> : null}
                     </span>
-                    {index < RESEARCH_PHASES.length - 1 ? <span className={cn("w-px flex-1", status === "done" ? "bg-foreground/40" : "bg-border")} /> : null}
+                    {index < RESEARCH_PHASES.length - 1 ? (
+                      <span className={cn("w-px flex-1", status === "done" ? "bg-foreground/40" : "bg-border")} />
+                    ) : null}
                   </div>
                   <div className={cn("pb-5", status === "pending" && "opacity-45")}>
                     <div className="text-sm font-medium text-foreground">{PHASE_LABELS[phase.labelKey]}</div>
+                    {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
                     {status === "active" && phase.status === "generating_intelligence" ? (
                       <p className="mt-1 text-xs text-muted-foreground">{ui.externalResearch.evaluatingFit}</p>
                     ) : null}
@@ -142,14 +227,16 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
         )}
 
         {(done || view.initialAnalysisAvailable) && view.companySlug ? (
-          <div className="mt-8 flex flex-col gap-3 rounded-lg border bg-card p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-8 flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm font-semibold">
                 {done ? ui.externalResearch.completedHeadline : ui.externalResearch.initialAnalysisAvailable}
               </div>
               <div className="text-xs text-muted-foreground">
                 {view.acceptedCount} {ui.externalResearch.acceptedSources}
-                {view.counts ? ` · ${view.counts.claims} ${ui.externalResearch.claims} · ${view.counts.signals} ${ui.externalResearch.signals} · ${view.counts.opportunities} ${ui.externalResearch.opportunities}` : ""}
+                {view.counts
+                  ? ` · ${view.counts.claims} ${ui.externalResearch.claims} · ${view.counts.signals} ${ui.externalResearch.signals} · ${view.counts.opportunities} ${ui.externalResearch.opportunities}`
+                  : ""}
               </div>
             </div>
             <Button asChild variant="brand">
@@ -181,48 +268,43 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
       </div>
 
       <aside className="lg:pt-14">
-        <div className="rounded-lg border bg-card">
-          <div className="border-b px-4 py-3 text-sm font-semibold">{ui.externalResearch.sourcesReviewed}</div>
-          <dl className="divide-y">
-            <div className="flex justify-between px-4 py-3 text-sm">
+        <div className="border-y">
+          <div className="py-3 text-sm font-semibold">{ui.externalResearch.sourcesReviewed}</div>
+          <dl className="divide-y border-t">
+            <div className="flex justify-between py-3 text-sm">
               <dt className="text-muted-foreground">{ui.externalResearch.found}</dt>
               <dd className="tabular font-semibold">{view.sourceCount}</dd>
             </div>
-            <div className="flex justify-between px-4 py-3 text-sm">
+            <div className="flex justify-between py-3 text-sm">
               <dt className="text-muted-foreground">{ui.externalResearch.processed}</dt>
               <dd className="tabular font-semibold">{view.acceptedCount}</dd>
             </div>
-            {view.unavailableCount > 0 ? (
-              <div className="flex justify-between px-4 py-3 text-sm">
-                <dt className="text-muted-foreground">{ui.externalResearch.unavailable}</dt>
-                <dd className="tabular font-semibold">{view.unavailableCount}</dd>
+            {view.rejectedCount > 0 ? (
+              <div className="flex justify-between py-3 text-sm">
+                <dt className="text-muted-foreground">Descartadas</dt>
+                <dd className="tabular font-semibold">{view.rejectedCount}</dd>
               </div>
             ) : null}
           </dl>
         </div>
-        {!done && !failed && ((view.counts?.claims ?? 0) > 0 || (view.counts?.signals ?? 0) > 0) ? (
-          <div className="mt-4 rounded-lg border bg-card p-4">
-            <p className="text-sm font-semibold">
-              {(view.counts?.signals ?? 0) > 0 ? ui.externalResearch.firstMovements : ui.externalResearch.firstIntelligencePreparing}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {view.memberProgress ??
-                `${view.counts?.claims ?? 0} ${ui.externalResearch.claims}${view.counts?.signals ? ` · ${view.counts.signals} ${ui.externalResearch.signals}` : ""}`}
-            </p>
-          </div>
-        ) : null}
         {view.sources.length > 0 ? (
-          <div className="mt-4 rounded-lg border bg-card p-4">
+          <div className="mt-6">
             <p className="text-sm font-semibold">{ui.externalResearch.analyzedSources}</p>
-            <ul className="mt-3 space-y-2">
-              {view.sources.slice(0, 8).map((source) => (
+            <ul className="mt-3 space-y-3">
+              {view.sources.slice(0, 12).map((source) => (
                 <li key={source.id} className="text-xs text-muted-foreground">
-                  <a href={source.url} className="text-foreground underline-offset-4 hover:underline" target="_blank" rel="noreferrer">
+                  <a
+                    href={source.url}
+                    className="text-foreground underline-offset-4 hover:underline"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     {source.title || source.publisher}
                   </a>
-                  <span className="block">
-                    {source.publisher}
-                    {source.publishedAt ? ` · ${source.publishedAt}` : ""} · {source.quality === "primary" ? ui.externalResearch.primary : ui.externalResearch.secondary}
+                  <span className="mt-0.5 block">
+                    {[source.publisher, source.publishedAt, sourceStatusLabel(source.status, source.rejectionReason)]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                 </li>
               ))}
