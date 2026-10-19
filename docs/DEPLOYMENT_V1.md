@@ -35,13 +35,24 @@ Obrigatórias em produção:
 - `RESEARCH_WORKER_ENABLED=true`
 - `NEXT_PUBLIC_APP_URL`
 - `DEMO_MODE=false`
+- `DEMO_AUTH_MODE=false`
+- `RESEARCH_WORKER_ENABLED=true`
+
+## Auth
+
+- Padrão: magic link / invite Supabase + allowlist (`workspace_authorized_emails`).
+- Domínio `@efeso.com` sozinho **não** libera acesso.
+- Provisionar: `npm run user:provision -- --email user@efeso.com --role member|admin`.
+- Google OAuth: opcional. Só com provider configurado no Supabase **e** `NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=true`. Google nunca bypassa a allowlist.
 
 ## Banco e storage
 
-1. Aplicar migrations Supabase (inclui `042_research_worker_lock.sql`).
+1. Aplicar migrations Supabase (inclui `042_research_worker_lock.sql` e `043_authorized_emails.sql`).
 2. Confirmar RLS.
-3. Importar Knowledge Pack curado.
-4. Não copiar `private/efeso-knowledge-sources/` para o host de app.
+3. Confirmar tabela `workspace_authorized_emails` (`invited` | `active` | `disabled`).
+4. Importar Knowledge Pack curado.
+5. Não copiar `private/efeso-knowledge-sources/` para o host de app.
+6. `DEMO_MODE=false` — nenhuma demo seed na superfície member.
 
 ## Ollama
 

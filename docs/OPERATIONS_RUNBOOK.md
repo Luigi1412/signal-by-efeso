@@ -46,7 +46,9 @@ npm run user:provision -- --email pessoa@efeso.com --role member
 npm run user:provision -- --email pessoa@efeso.com --role admin
 ```
 
-Se invite não estiver disponível, use o dashboard Auth do Supabase e associe membership.
+Isso grava o e-mail em `workspace_authorized_emails` (`invited`) e tenta invite Supabase.
+Sem allowlist, mesmo `@efeso.com` é barrado no first access.
+Se invite Auth falhar, o allowlist ainda basta: o usuário completa first access após autenticação válida.
 
 ## Atualizar Knowledge Pack
 
