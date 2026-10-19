@@ -22,6 +22,20 @@ Mudanças após este ponto: simplificação, correção, segurança, operação,
 
 Suzano permanece como caso válido de facts-only: fontes e claims reais, sem sinal inventado.
 
+Run `8424685e`: `insufficient_evidence_for_signal: true` → outcome `facts_only`.
+
+## Caso positivo real (Gate N)
+
+Pesquisa positiva real executada sem seed de signals e sem relaxar validators:
+
+- Empresa: Embraer S.A. (`embraer.com`, não demo)
+- Run: `42a5d1f5-3b41-4a69-a313-c4d1597fa5e2`
+- Outcome: `signal_found`
+- Signals ativos: `production_ramp_up` sustentados por deliveries 4Q25 de fonte oficial Embraer
+- Validators intactos; ausência opcional de geography/period não bloqueia promoção quando claims também omitem esses campos
+
+Browser member/admin/outsider e deploy continuam pendentes.
+
 ## Compatibilidade
 
 Rotas antigas (`/radar`, `/signals`, `/actions`, `/opportunities`, `/knowledge/efeso`) redirecionam para a superfície final.
