@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getExternalResearchLimits } from "./config";
 import { detectPotentialClaimConflicts } from "./conflicts";
 import { discoverCompanySources, describeSourceMix, selectAcceptedSources, selectInitialSources } from "./discover";
 import { resolveCompanyEntity } from "./entity";
@@ -19,10 +20,11 @@ test("full fake research plan: query → entity → sources → mix without netw
   const accepted = selectAcceptedSources(assessed);
   const initial = selectInitialSources(assessed, entity.candidate.officialDomain);
   const mix = describeSourceMix(accepted);
+  const initialLimit = getExternalResearchLimits().initialAcceptedSourceLimit;
 
   assert.ok(accepted.length >= 1);
   assert.ok(initial.length >= 1);
-  assert.ok(initial.length <= 3);
+  assert.ok(initial.length <= initialLimit);
   assert.ok(initial.every((row) => row.accepted));
   assert.equal(mix.official, true);
   assert.ok(accepted.every((row) => row.sourceQuality !== "weak"));

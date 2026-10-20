@@ -11,6 +11,9 @@ interface CompanyWorkspaceHeaderProps {
   lastResearchedAtLabel?: string | null;
   outcomeLabel?: string | null;
   statusLabel?: string | null;
+  researchGeography?: string | null;
+  corporateCountry?: string | null;
+  demoMode?: boolean;
 }
 
 export function CompanyWorkspaceHeader({
@@ -19,21 +22,32 @@ export function CompanyWorkspaceHeader({
   lastResearchedAtLabel,
   outcomeLabel,
   statusLabel,
+  researchGeography,
+  corporateCountry,
+  demoMode = false,
 }: CompanyWorkspaceHeaderProps) {
-  const meta = [company.industry, company.country, company.website].filter(Boolean).join(" · ");
+  const domicile = corporateCountry || company.country;
+  const meta = [company.industry, domicile ? `Domicílio: ${domicile}` : null, company.website]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="border-b bg-card print:hidden">
-      <div className="mx-auto w-full max-w-3xl px-5 pt-5 sm:px-8 lg:px-10">
+      <div className="mx-auto w-full max-w-6xl px-5 pt-5 sm:px-8 lg:px-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CompanyBreadcrumb slug={company.slug} companyName={company.name} />
-          <DemoBadge className="print:hidden" />
+          <DemoBadge className="print:hidden" visible={demoMode} />
         </div>
 
         <div className="mt-4 flex flex-col gap-4 pb-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">{company.name}</h1>
             {meta ? <p className="mt-1 text-sm text-muted-foreground">{meta}</p> : null}
+            {researchGeography ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Escopo da pesquisa: <span className="font-medium text-foreground">{researchGeography}</span>
+              </p>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {lastResearchedAtLabel ? (
                 <span>

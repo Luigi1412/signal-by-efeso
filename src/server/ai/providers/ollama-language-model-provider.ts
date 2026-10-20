@@ -420,6 +420,7 @@ function fillFromJsonSchema(
       continue;
     }
     output[key] = coerceScalar(output[key], propertySchema, root, key);
+    output[key] = coerceEnum(output[key], propertySchema, root, key);
     if (key === "claim_type") {
       const constValue = schemaConst(nested, root);
       if (constValue !== undefined) output[key] = constValue;
@@ -600,6 +601,49 @@ function coerceScalar(
     return Math.round(scaleConfidence(key, value));
   }
   return value;
+}
+
+function coerceEnum(
+  value: unknown,
+  schema: Record<string, unknown>,
+  root: Record<string, unknown>,
+  key: string,
+): unknown {
+  if (typeof value !== "string") return value;
+  const options = schemaEnumOptions(schema, root);
+  if (options.length === 0) return value;
+  const trimmed = value.trim();
+  const exact = options.find((option) => option === trimmed);
+  if (exact !== undefined) return exact;
+  const lower = trimmed.toLowerCase();
+  const caseMatch = options.find((option) => option.toLowerCase() === lower);
+  if (caseMatch !== undefined) return caseMatch;
+  if (key === "suggested_importance" || key === "importance") {
+    const mapped = mapImportanceAlias(lower);
+    if (mapped && options.includes(mapped)) return mapped;
+  }
+  return value;
+}
+
+function schemaEnumOptions(schema: Record<string, unknown>, root: Record<string, unknown>): string[] {
+  const resolved = resolveJsonSchema(schema, root);
+  if (Array.isArray(resolved.enum)) {
+    return resolved.enum.filter((item): item is string => typeof item === "string");
+  }
+  if (Array.isArray(resolved.anyOf)) {
+    for (const branch of resolved.anyOf) {
+      const nested = schemaEnumOptions(branch as Record<string, unknown>, root);
+      if (nested.length > 0) return nested;
+    }
+  }
+  return [];
+}
+
+function mapImportanceAlias(raw: string): "low" | "medium" | "high" | null {
+  if (["low", "baixa", "baixo", "minor", "l", "1"].includes(raw)) return "low";
+  if (["medium", "med", "moderate", "moderada", "moderado", "media", "média", "m", "2"].includes(raw)) return "medium";
+  if (["high", "alta", "alto", "critical", "importante", "h", "3"].includes(raw)) return "high";
+  return null;
 }
 
 function schemaNumericKind(schema: Record<string, unknown>, root: Record<string, unknown>): "number" | "integer" | null {

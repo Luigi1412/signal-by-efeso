@@ -1,3 +1,4 @@
+import { isAggregatorHost } from "./aggregators";
 import { hostnameOf, isSubdomainOrEqual, registrableDomain } from "./normalize";
 import { assertSafeHttpUrl } from "./ssrf";
 import type { DiscoveredSource, ExternalSourceType } from "./types";
@@ -14,6 +15,10 @@ const NEWS_HOSTS = new Set([
   "bnamericas.com",
   "nytimes.com",
   "theguardian.com",
+  "infomoney.com.br",
+  "neofeed.com.br",
+  "braziljournal.com",
+  "cnbc.com",
 ]);
 
 const REGULATOR_HOSTS = [/sec\.gov$/, /cvm\.gov\.br$/, /b3\.com\.br$/, /gov\.br$/, /europa\.eu$/];
@@ -61,6 +66,10 @@ export function parsePublishedAt(value: unknown): string | null {
   return match[1];
 }
 
+/**
+ * Classify by publisher authority first, then by official-domain path/title cues.
+ * Aggregators must never be labeled earnings_release / annual_report.
+ */
 export function classifySource(
   url: string,
   title: string,
@@ -71,30 +80,45 @@ export function classifySource(
   const official = officialDomain ? isSubdomainOrEqual(host, officialDomain) : false;
 
   if (REGULATOR_HOSTS.some((pattern) => pattern.test(host))) {
-    return { sourceType: host.includes("sec") || host.includes("cvm") || host.includes("b3") ? "filing" : "regulator", sourceTier: 2 };
+    return {
+      sourceType: host.includes("sec") || host.includes("cvm") || host.includes("b3") ? "filing" : "regulator",
+      sourceTier: 2,
+    };
   }
+
+  if (isAggregatorHost(host)) {
+    // Tier 3 = secondary context only — never earnings_release / annual_report.
+    return { sourceType: "other", sourceTier: 3 };
+  }
+
   if (isNewsHost(host)) {
     return { sourceType: "news", sourceTier: 3 };
   }
-  if (/sustainab|relatorio-de-sustent|esg|gri-report/.test(haystack)) {
-    return { sourceType: "sustainability_report", sourceTier: official ? 1 : 3 };
+
+  // Document-type cues only promote to earnings/annual/press when on the official domain.
+  if (official) {
+    if (/sustainab|relatorio-de-sustent|esg|gri-report/.test(haystack)) {
+      return { sourceType: "sustainability_report", sourceTier: 1 };
+    }
+    if (/annual[- ]?report|relatorio-anual|20-f|10-k|\.pdf/.test(haystack) && /annual|relat[oó]rio|20-f|10-k/.test(haystack)) {
+      return { sourceType: "annual_report", sourceTier: 1 };
+    }
+    if (/earnings|quarterly[- ]?result|resultados|q[1-4][-/ ]?20|full[- ]?year|interim/.test(haystack)) {
+      return { sourceType: "earnings_release", sourceTier: 1 };
+    }
+    if (/press[- ]?release|newsroom|media-center|sala-de-imprensa|comunicado|comunicati/.test(haystack)) {
+      return { sourceType: "press_release", sourceTier: 1 };
+    }
+    if (/investor|relations|\/ir\/|ri\.|investidores|investisseurs/.test(haystack)) {
+      return { sourceType: "official_page", sourceTier: 1 };
+    }
+    return { sourceType: "official_page", sourceTier: 1 };
   }
-  if (/annual[- ]?report|relatorio-anual|20-f|10-k/.test(haystack)) {
-    return { sourceType: "annual_report", sourceTier: official ? 1 : 3 };
+
+  // Non-official: never invent earnings_release from the word "earnings" in an aggregator-like path.
+  if (/press[- ]?release|newsroom|comunicado/.test(haystack)) {
+    return { sourceType: "other", sourceTier: 3 };
   }
-  if (/deliver(y|ies)|aircraft delivered|backlog|production (ramp|level|nivel)/.test(haystack)) {
-    return { sourceType: "press_release", sourceTier: official ? 1 : 3 };
-  }
-  if (/earnings|quarterly[- ]?result|resultados|q[1-4]-20/.test(haystack)) {
-    return { sourceType: "earnings_release", sourceTier: official ? 1 : 3 };
-  }
-  if (/press[- ]?release|newsroom|media-center|sala-de-imprensa|comunicado/.test(haystack)) {
-    return { sourceType: "press_release", sourceTier: official ? 1 : 3 };
-  }
-  if (/investor|relations|\/ir\/|ri\./.test(haystack)) {
-    return { sourceType: "official_page", sourceTier: official ? 1 : 3 };
-  }
-  if (official) return { sourceType: "official_page", sourceTier: 1 };
   return { sourceType: "other", sourceTier: 3 };
 }
 

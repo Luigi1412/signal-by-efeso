@@ -74,21 +74,22 @@ test("Toyota is ambiguous across Japan and Brazil", () => {
   }
 });
 
-test("unknown company like Klabin does not silently resolve to a demo seed", () => {
+test("Klabin resolves to its own Brazilian identity, not Natura or Vale", () => {
   const result = resolveCompanyEntity({ query: "Klabin" });
-  assert.notEqual(result.kind, "resolved");
-  if (result.kind === "unresolved") {
-    assert.ok(!result.suggestions.some((row) => /natura|vale/i.test(row.canonicalName)));
-  }
-  if (result.kind === "ambiguous") {
-    assert.ok(!result.candidates.some((row) => /natura|vale/i.test(row.canonicalName)));
+  assert.equal(result.kind, "resolved");
+  if (result.kind === "resolved") {
+    assert.equal(result.candidate.officialDomain, "klabin.com.br");
+    assert.equal(result.candidate.headquartersCountry, "BR");
+    assert.doesNotMatch(result.candidate.canonicalName, /natura|vale/i);
   }
 });
 
-test("unknown company WEG does not resolve to Natura or Vale", () => {
+test("WEG resolves to its own Brazilian identity, not Natura or Vale", () => {
   const result = resolveCompanyEntity({ query: "WEG" });
-  assert.notEqual(result.kind, "resolved");
-  const pool =
-    result.kind === "ambiguous" ? result.candidates : result.kind === "unresolved" ? result.suggestions : [];
-  assert.ok(!pool.some((row) => /natura|vale|embraer/i.test(`${row.canonicalName} ${row.officialDomain}`)));
+  assert.equal(result.kind, "resolved");
+  if (result.kind === "resolved") {
+    assert.equal(result.candidate.officialDomain, "weg.net");
+    assert.equal(result.candidate.headquartersCountry, "BR");
+    assert.doesNotMatch(`${result.candidate.canonicalName} ${result.candidate.officialDomain}`, /natura|vale|embraer/i);
+  }
 });

@@ -63,10 +63,11 @@ test("official IR and earnings rank above Reuters and blogs", () => {
 
 test("operational delivery disclosure ranks above older generic earnings title", () => {
   const domain = "example-aero.com";
+  const companyName = "Example Aero";
   const deliveries = assessSource(
     {
       url: "https://www.example-aero.com/media-center/en?detail=23997",
-      title: "Company reports 91 aircraft delivered in the fourth quarter",
+      title: "Example Aero reports 91 aircraft delivered in the fourth quarter",
       publisher: "example-aero.com",
       sourceType: "official_page",
       sourceTier: 1,
@@ -87,8 +88,37 @@ test("operational delivery disclosure ranks above older generic earnings title",
   );
   assert.equal(sourcePriorityBand(deliveries, domain), "official_report");
   assert.equal(sourcePriorityBand(olderEarnings, domain), "official_report");
-  const ranked = rankSourcesForInitialPass([olderEarnings, deliveries], domain);
+  const ranked = rankSourcesForInitialPass([olderEarnings, deliveries], domain, companyName);
   assert.equal(ranked[0]?.url, deliveries.url);
+});
+
+test("off-topic aerospace articles do not outrank company-named retail sources", () => {
+  const domain = "americanas.com.br";
+  const companyName = "Americanas";
+  const retail = assessSource(
+    {
+      url: "https://ri.americanas.io/en/investor-information/cvm-filings",
+      title: "Americanas CVM filings",
+      publisher: "Americanas",
+      sourceType: "filing",
+      sourceTier: 2,
+      publishedAt: "2026-03-01",
+    },
+    domain,
+  );
+  const aerospace = assessSource(
+    {
+      url: "https://www.cnbc.com/2026/01/11/boeing-plane-deliveries-production-pace.html",
+      title: "Boeing plane deliveries are the highest in years. Now it's ramping up",
+      publisher: "CNBC",
+      sourceType: "news",
+      sourceTier: 2,
+      publishedAt: "2026-01-11",
+    },
+    domain,
+  );
+  const ranked = rankSourcesForInitialPass([aerospace, retail], domain, companyName);
+  assert.equal(ranked[0]?.url, retail.url);
 });
 
 test("earnings article ranks above IR listing shells", () => {

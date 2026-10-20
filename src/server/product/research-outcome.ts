@@ -3,6 +3,8 @@
  * Technical codes stay admin-only.
  */
 
+import { evaluateResearchQualityGate } from "./research-quality-gate";
+
 export const RESEARCH_OUTCOMES = [
   "signal_found",
   "facts_only",
@@ -20,31 +22,26 @@ export function deriveCompanyResearchOutcome(input: {
   failureCode?: string | null;
   runStatus?: string | null;
   insufficientEvidenceForSignal?: boolean;
+  primarySourceCount?: number;
+  secondaryOnlyClaimCount?: number;
+  recentMaterialClaimCount?: number;
+  entityConfirmed?: boolean;
+  unavailableSourceCount?: number;
 }): ResearchOutcome {
-  const status = input.runStatus ?? null;
-  const code = input.failureCode ?? null;
-
-  // Hard failure only when the run itself failed. Stale failure_code on partial/completed
-  // must not hide promoted signals (late enrichment infra errors finish as partial).
-  if (status === "failed") {
-    if (code === "NO_RELIABLE_SOURCES" || code === "SOURCE_FETCH_FAILED") return "no_reliable_sources";
-    if (code === "TAVILY_AUTH_FAILED" || code === "TAVILY_TIMEOUT" || code === "LOCAL_MODEL_UNAVAILABLE") {
-      return "analysis_failed";
-    }
-    return "analysis_failed";
-  }
-
-  if (input.signalCount > 0) return "signal_found";
-
-  if (status === "partial") return "analysis_partial";
-
-  if (input.activeClaimCount > 0 || input.insufficientEvidenceForSignal) {
-    return "facts_only";
-  }
-
-  if (code === "NO_RELIABLE_SOURCES") return "no_reliable_sources";
-
-  return "insufficient_evidence";
+  const gate = evaluateResearchQualityGate({
+    signalCount: input.signalCount,
+    activeClaimCount: input.activeClaimCount,
+    primarySourceCount: input.primarySourceCount ?? (input.activeClaimCount > 0 ? 1 : 0),
+    secondaryOnlyClaimCount: input.secondaryOnlyClaimCount ?? 0,
+    recentMaterialClaimCount:
+      input.recentMaterialClaimCount ?? (input.activeClaimCount > 0 ? input.activeClaimCount : 0),
+    entityConfirmed: input.entityConfirmed ?? true,
+    runStatus: input.runStatus,
+    failureCode: input.failureCode,
+    unavailableSourceCount: input.unavailableSourceCount,
+    insufficientEvidenceForSignal: input.insufficientEvidenceForSignal,
+  });
+  return gate.researchOutcome;
 }
 
 export function researchOutcomeMemberCopy(outcome: ResearchOutcome): {
@@ -65,7 +62,7 @@ export function researchOutcomeMemberCopy(outcome: ResearchOutcome): {
     case "insufficient_evidence":
       return {
         title: "Evidência insuficiente",
-        body: "As informações públicas encontradas ainda são insuficientes para uma conclusão.",
+        body: "As informações públicas recuperadas ainda são insuficientes para uma conclusão confiável — fontes oficiais densas ou movimentos recentes materiais não foram retidos.",
       };
     case "no_reliable_sources":
       return {
@@ -74,8 +71,8 @@ export function researchOutcomeMemberCopy(outcome: ResearchOutcome): {
       };
     case "analysis_partial":
       return {
-        title: "Pesquisa parcial",
-        body: "Parte da pesquisa ficou disponível. Há evidência útil, mesmo sem conclusão completa.",
+        title: "Pesquisa concluída com ressalvas",
+        body: "A execução terminou com avisos (por exemplo, fontes indisponíveis). Trate a leitura como provisória.",
       };
     case "analysis_failed":
       return {
@@ -101,12 +98,12 @@ export function memberResearchStatusLabel(status: string | null | undefined, out
     case "needs_user_resolution":
       return "Confirmação necessária";
     case "completed":
-      if (outcome === "facts_only") return "Fatos encontrados, sem evidência suficiente para um sinal";
-      if (outcome === "insufficient_evidence") return "Evidência insuficiente";
-      if (outcome === "signal_found") return "Sinal identificado";
+      if (outcome === "facts_only") return "Concluída — fatos sem sinal";
+      if (outcome === "insufficient_evidence") return "Concluída — evidência insuficiente";
+      if (outcome === "signal_found") return "Concluída — sinal identificado";
       return "Pesquisa concluída";
     case "partial":
-      return "Pesquisa parcial";
+      return "Concluída com avisos";
     case "failed":
       return "Falha recuperável";
     case "cancelled":

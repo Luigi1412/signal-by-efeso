@@ -19,8 +19,10 @@ import { listClaimsForSignalExtraction, listEvidenceQuotesForClaims, listSignalC
 import { getExternalResearchLimits } from "./config";
 import { detectPotentialClaimConflicts } from "./conflicts";
 import { discoverCompanySources, selectAcceptedSources, selectInitialSources } from "./discover";
-import { resolveCompanyEntity, type ExistingCompanyRecord } from "./entity";
+import { inferHeadquartersFromDomain, resolveCompanyEntity, type ExistingCompanyRecord } from "./entity";
 import { UnsafeFetchError } from "./fetch-safe";
+import { isAggregatorHost } from "./aggregators";
+import { extractOfficialPdfLinks } from "./html";
 import {
   attachSnapshotToLegacyRun,
   findReusableSnapshot,
@@ -28,8 +30,9 @@ import {
   ingestFetchedDocument,
   isLowYieldNormalizedText,
 } from "./ingest";
+import { normalizeCompanyQuery, normalizeUrl } from "./normalize";
 import { urlSubstanceScore } from "./priority";
-import { normalizeCompanyQuery } from "./normalize";
+import { isRejectedNoiseUrl } from "./source-noise";
 import {
   completeLegacyResearchRun,
   countConcurrentRuns,
@@ -48,6 +51,7 @@ import {
   listActiveMetricClaims,
   listCompanyAliases,
   listSourceCandidates,
+  updateCompanyIdentity,
   listWorkspaceCompanies,
   markAnalysisReady,
   markClaimsPotentialConflict,
@@ -347,13 +351,17 @@ function normalizeOfficialDomain(value: string | null | undefined): string {
 }
 
 function manualCandidateFromRun(run: ExternalResearchRunRow, domain: string | null): EntityCandidate {
+  const officialDomain = normalizeOfficialDomain(domain);
+  // Research geography (requested_country) must NOT become corporate HQ.
   return {
-    canonicalName: run.requested_query,
-    officialDomain: normalizeOfficialDomain(domain),
-    headquartersCountry: run.requested_country ?? "",
+    canonicalName: run.requested_query.trim(),
+    officialDomain,
+    headquartersCountry: inferHeadquartersFromDomain(officialDomain),
     industry: run.requested_industry ?? "",
-    aliases: [],
-    decisionBasis: domain ? ["user-provided domain"] : ["user-confirmed identity"],
+    aliases: run.requested_query.trim() ? [run.requested_query.trim()] : [],
+    decisionBasis: domain
+      ? ["user-provided domain", "headquarters inferred from domain when known"]
+      : ["user-confirmed identity"],
     existingCompanyId: null,
     existingSlug: null,
   };
@@ -373,6 +381,7 @@ async function phaseResolveEntity(run: ExternalResearchRunRow): Promise<External
     country: run.requested_country,
     industry: run.requested_industry,
     existing,
+    selectedDomain,
   });
   if (selectedDomain && resolution.kind !== "resolved") {
     const pool = resolution.kind === "ambiguous" ? resolution.candidates : resolution.suggestions;
@@ -429,6 +438,17 @@ async function phaseResolveEntity(run: ExternalResearchRunRow): Promise<External
     title: resolution.candidate.canonicalName,
     country: resolution.candidate.headquartersCountry,
   });
+  // Persist research geography separately from corporate domicile.
+  run = {
+    ...run,
+    resolution_payload: {
+      ...run.resolution_payload,
+      researchGeography: run.requested_country,
+      corporateCountry: resolution.candidate.headquartersCountry,
+      canonicalName: resolution.candidate.canonicalName,
+      queriedName: run.requested_query,
+    },
+  };
   const legacy = await insertLegacyResearchRun({
     workspaceId: run.workspace_id,
     analysisId: analysis.id,
@@ -459,15 +479,31 @@ async function phaseDiscover(run: ExternalResearchRunRow): Promise<ExternalResea
   if (!provider) {
     return fail(run, "PROVIDER_NOT_CONFIGURED", "Nenhum provedor de pesquisa externa está configurado neste ambiente.");
   }
-  const { assessed } = await discoverCompanySources({
-    companyName: candidate?.canonicalName ?? run.requested_query,
+  const companyName = candidate?.canonicalName ?? run.requested_query;
+  const phaseStarted = Date.now();
+  const { assessed, queries } = await discoverCompanySources({
+    companyName,
     officialDomain: candidate?.officialDomain ?? null,
-    country: run.requested_country ?? candidate?.headquartersCountry ?? null,
+    // Discovery geography may bias press sites; corporate HQ stays on the candidate.
+    country: candidate?.headquartersCountry || run.requested_country || null,
+    aliases: candidate?.aliases ?? [],
     provider,
     horizonMonths: run.time_horizon_months,
   });
+  await insertResearchEvent({
+    workspaceId: run.workspace_id,
+    researchRunId: run.id,
+    eventType: "phase_timing",
+    payload: {
+      phase: "discovery",
+      ms: Date.now() - phaseStarted,
+      queryCount: queries.length,
+      assessedCount: assessed.length,
+      acceptedCount: assessed.filter((row) => row.accepted).length,
+    },
+  });
   const qualityAccepted = selectAcceptedSources(assessed);
-  const initial = selectInitialSources(assessed, candidate?.officialDomain ?? null);
+  const initial = selectInitialSources(assessed, candidate?.officialDomain ?? null, companyName);
   const initialUrls = new Set(initial.map((row) => row.normalizedUrl));
   await insertSourceCandidates(
     assessed.map((row) => ({
@@ -526,6 +562,8 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
   const limits = getExternalResearchLimits();
   let unavailable = 0;
   let totalBytes = 0;
+  const phaseStarted = Date.now();
+  const pdfQueue: string[] = [];
 
   const ingestRow = async (row: ExternalSourceCandidateRow) => {
     if (row.snapshot_id || !run.research_run_id) return;
@@ -562,6 +600,16 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
         snapshot_id: ingested.snapshotId,
         content_hash: null,
       });
+      // Official JS shells often leave only a title — harvest same-domain PDF links before rejecting.
+      if (document.mimeType.includes("html") && candidate?.officialDomain) {
+        const html = new TextDecoder().decode(document.bytes);
+        const textLen = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
+        if (textLen < 2500) {
+          for (const pdf of extractOfficialPdfLinks(html, document.finalUrl || row.url, candidate.officialDomain, 2)) {
+            if (!pdfQueue.includes(pdf)) pdfQueue.push(pdf);
+          }
+        }
+      }
     } catch (error) {
       const status = fetchStatus(error);
       await updateSourceCandidate(row.id, { status, rejection_reason: status === "unavailable" ? "unavailable" : "fetch_failed" });
@@ -585,19 +633,67 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
   };
   await markThinFetched();
 
+  // Prefer harvested official PDFs over secondary aggregators when shells were thin.
+  if (pdfQueue.length > 0) {
+    const existing = new Set(
+      (await listSourceCandidates(run.id)).map((row) => row.normalized_url || normalizeUrl(row.url)),
+    );
+    const pdfRows = pdfQueue
+      .filter((url) => !existing.has(normalizeUrl(url)))
+      .slice(0, 4)
+      .map((url) => ({
+        workspaceId: run.workspace_id,
+        researchRunId: run.id,
+        url,
+        normalizedUrl: normalizeUrl(url),
+        title: `${candidate?.canonicalName ?? run.requested_query} — PDF oficial`,
+        publisher: candidate?.canonicalName ?? "official",
+        sourceType: "earnings_release",
+        sourceTier: 1,
+        sourceQuality: "primary",
+        publishedAt: null as string | null,
+        status: "accepted" as const,
+        rejectionReason: null as string | null,
+        canonicalUrl: url,
+      }));
+    const inserted = await insertSourceCandidates(pdfRows);
+    for (const row of inserted) await ingestRow(row);
+    await markThinFetched();
+  }
+
   let substantial = (await listSourceCandidates(run.id)).filter((row) => row.snapshot_id && row.status !== "rejected");
   if (substantial.length < limits.initialAcceptedSourceLimit) {
+    const companyName = candidate?.canonicalName ?? run.requested_query;
     const deferred = (await listSourceCandidates(run.id))
       .filter((row) => row.status === "discovered")
       .sort(
         (left, right) =>
-          urlSubstanceScore(right.canonical_url || right.url, right.title) -
-          urlSubstanceScore(left.canonical_url || left.url, left.title),
+          urlSubstanceScore(
+            right.canonical_url || right.url,
+            right.title,
+            candidate?.officialDomain ?? null,
+            companyName,
+          ) -
+          urlSubstanceScore(
+            left.canonical_url || left.url,
+            left.title,
+            candidate?.officialDomain ?? null,
+            companyName,
+          ),
       );
     let attempts = 0;
     for (const row of deferred) {
       if (substantial.length >= limits.initialAcceptedSourceLimit) break;
       if (attempts >= limits.enrichmentSourceLimit) break;
+      const candidateUrl = row.canonical_url || row.url;
+      if (isRejectedNoiseUrl(candidateUrl)) {
+        await updateSourceCandidate(row.id, { status: "rejected", rejection_reason: "noise_url" });
+        continue;
+      }
+      // Prefer official / news over aggregators while filling the enrichment budget.
+      if (isAggregatorHost(candidateUrl) && substantial.some((item) => item.source_quality === "primary")) {
+        continue;
+      }
       attempts += 1;
       await updateSourceCandidate(row.id, { status: "accepted" });
       await ingestRow({ ...row, status: "accepted" });
@@ -620,6 +716,18 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
   if (snapshots.length === 0) {
     return fail(run, "SOURCE_FETCH_FAILED", "Não foi possível acessar as fontes encontradas.");
   }
+  await insertResearchEvent({
+    workspaceId: run.workspace_id,
+    researchRunId: run.id,
+    eventType: "phase_timing",
+    payload: {
+      phase: "fetch",
+      ms: Date.now() - phaseStarted,
+      retained: snapshots.length,
+      unavailable,
+      pdfFallbacks: pdfQueue.length,
+    },
+  });
   if (!isIntelligenceGenerationConfigured()) {
     const code = getLanguageModelProviderName() === "ollama" ? "LOCAL_MODEL_UNAVAILABLE" : "OPENAI_NOT_CONFIGURED";
     await finishPartial(run, code, code === "LOCAL_MODEL_UNAVAILABLE" ? LOCAL_MODEL_MESSAGE : OPENAI_PARTIAL_MESSAGE, unavailable);
@@ -648,12 +756,23 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
   const extractLimit = limits.initialAcceptedSourceLimit;
   const companies = await listWorkspaceCompanies(run.workspace_id);
   const companyName = companies.find((row) => row.id === run.resolved_company_id)?.display_name ?? run.requested_query;
+  const candidate = candidateFromPayload(run);
   const rows = (await listSourceCandidates(run.id))
     .filter((row) => row.snapshot_id && row.source_id && (row.status === "fetched" || row.status === "accepted"))
     .sort(
       (left, right) =>
-        urlSubstanceScore(right.canonical_url || right.url, right.title) -
-        urlSubstanceScore(left.canonical_url || left.url, left.title),
+        urlSubstanceScore(
+          right.canonical_url || right.url,
+          right.title,
+          candidate?.officialDomain ?? null,
+          companyName,
+        ) -
+        urlSubstanceScore(
+          left.canonical_url || left.url,
+          left.title,
+          candidate?.officialDomain ?? null,
+          companyName,
+        ),
     );
   let extracted = 0;
   let extractionFailures = 0;
@@ -927,21 +1046,27 @@ async function phaseActions(run: ExternalResearchRunRow): Promise<ExternalResear
     }
   }
   const counts = await countPromotedPipeline(run.workspace_id, run.resolved_company_id, run.analysis_id);
-  const partial = run.unavailable_source_count > 0;
+  const warnings = run.unavailable_source_count > 0;
   await updateCompanyLastResearched(run.workspace_id, run.resolved_company_id);
   await markAnalysisReady(run.workspace_id, run.analysis_id);
   await completeLegacyResearchRun(run.workspace_id, run.research_run_id, false);
+  // Execution finished successfully — warnings live in payload, not as a fake "partial outcome".
   const updated = await transitionRun(run.workspace_id, run.id, "generating_actions", {
-    status: partial ? "partial" : "completed",
+    status: "completed",
     completed_at: new Date().toISOString(),
-    failure_reason: partial ? "Pesquisa concluída com algumas fontes indisponíveis." : null,
-    resolution_payload: { ...run.resolution_payload, counts },
+    failure_reason: warnings ? "Algumas fontes ficaram indisponíveis; a execução foi concluída com avisos." : null,
+    resolution_payload: {
+      ...run.resolution_payload,
+      counts,
+      execution_status: warnings ? "completed_with_warnings" : "completed",
+      warnings: warnings ? ["unavailable_sources"] : [],
+    },
   });
   await insertResearchEvent({
     workspaceId: run.workspace_id,
     researchRunId: run.id,
-    eventType: partial ? "run_partial" : "run_completed",
-    payload: { counts },
+    eventType: "run_completed",
+    payload: { counts, execution_status: warnings ? "completed_with_warnings" : "completed" },
   });
   return updated ?? run;
 }
@@ -1003,17 +1128,28 @@ async function loadExisting(workspaceId: string): Promise<ExistingCompanyRecord[
 }
 
 async function ensureCompany(workspaceId: string, candidate: EntityCandidate): Promise<{ id: string; slug: string }> {
-  if (candidate.existingCompanyId && candidate.existingSlug) {
+  const refreshIdentity = async (companyId: string, slug: string) => {
+    await updateCompanyIdentity({
+      workspaceId,
+      companyId,
+      displayName: candidate.canonicalName,
+      domain: candidate.officialDomain || null,
+      country: candidate.headquartersCountry.slice(0, 2) || null,
+      industry: candidate.industry,
+    });
     for (const alias of [candidate.canonicalName, ...candidate.aliases]) {
-      await insertCompanyAlias(workspaceId, candidate.existingCompanyId, alias);
+      await insertCompanyAlias(workspaceId, companyId, alias);
     }
-    return { id: candidate.existingCompanyId, slug: candidate.existingSlug };
+    return { id: companyId, slug };
+  };
+  if (candidate.existingCompanyId && candidate.existingSlug) {
+    return refreshIdentity(candidate.existingCompanyId, candidate.existingSlug);
   }
   const companies = await listWorkspaceCompanies(workspaceId);
   const domainHit = candidate.officialDomain
     ? companies.find((row) => (row.primary_domain ?? "").replace(/^www\./, "") === candidate.officialDomain)
     : null;
-  if (domainHit) return { id: domainHit.id, slug: domainHit.slug };
+  if (domainHit) return refreshIdentity(domainHit.id, domainHit.slug);
   let slug = candidate.officialDomain?.split(".")[0] || slugify(candidate.canonicalName);
   if (companies.some((row) => row.slug === slug)) slug = `${slug}-${candidate.headquartersCountry.toLowerCase() || "x"}`;
   const created = await insertCompany({

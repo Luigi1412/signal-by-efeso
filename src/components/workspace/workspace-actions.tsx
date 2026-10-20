@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { startExternalResearchAction } from "@/server/actions/external-research-actions";
 import { Button } from "@/components/ui/button";
 import { ui } from "@/i18n";
@@ -13,7 +13,7 @@ interface WorkspaceActionsProps {
   companyName?: string;
 }
 
-/** Header actions for company workspace — update research only. */
+/** Header actions for company workspace — download report + update research. */
 export function WorkspaceActions({ companySlug, companyName }: WorkspaceActionsProps) {
   const [updating, setUpdating] = useState(false);
   const router = useRouter();
@@ -28,10 +28,20 @@ export function WorkspaceActions({ companySlug, companyName }: WorkspaceActionsP
     setUpdating(false);
   }
 
+  function handleDownload() {
+    window.print();
+  }
+
   return (
-    <Button variant="brand" onClick={() => void handleUpdate()} disabled={updating}>
-      <RefreshCw data-icon="inline-start" />
-      {ui.companyReport.updateResearch}
-    </Button>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button type="button" variant="outline" onClick={handleDownload}>
+        <Download data-icon="inline-start" />
+        {ui.workspace.downloadReport}
+      </Button>
+      <Button type="button" variant="brand" onClick={() => void handleUpdate()} disabled={updating}>
+        <RefreshCw data-icon="inline-start" />
+        {ui.companyReport.updateResearch}
+      </Button>
+    </div>
   );
 }

@@ -7,6 +7,7 @@ import { getPersistedCompanyWorkspace } from "@/server/services/analysis-service
 import { assertEfesoAccess } from "@/server/access/require-efeso-access";
 import { listResearchRunsForCompany, listSourceCandidates, listWorkspaceCompanies } from "@/server/external-research/persistence";
 import { workspaceStaticParams } from "@/lib/workspace";
+import { isExplicitDemoContent } from "@/lib/supabase/env";
 import { notFound } from "next/navigation";
 
 export function generateStaticParams() {
@@ -46,5 +47,13 @@ export default async function CompanyOverviewPage({ params }: PageProps<"/compan
     return <EmptyState title={ui.errors.missingData} />;
   }
 
-  return <CompanyReport slug={slug} briefing={briefing} sources={sources} history={history} />;
+  return (
+    <CompanyReport
+      slug={slug}
+      briefing={briefing}
+      sources={sources}
+      history={history}
+      demoMode={isExplicitDemoContent()}
+    />
+  );
 }

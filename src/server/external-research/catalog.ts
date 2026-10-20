@@ -97,4 +97,28 @@ export const PUBLIC_COMPANY_CATALOG: CompanyIdentity[] = [
     aliases: ["toyota", "toyota brasil", "toyota do brasil"],
     decisionBasis: ["normalized name", "official domain toyota.com.br"],
   },
+  {
+    canonicalName: "EssilorLuxottica",
+    officialDomain: "essilorluxottica.com",
+    headquartersCountry: "FR",
+    industry: "Eyewear e óptica",
+    aliases: ["essilorluxottica", "essilor luxottica", "luxottica", "essilor", "essilorluxottica sa"],
+    decisionBasis: ["normalized name", "brand alias of controlling group", "official domain essilorluxottica.com"],
+  },
+  {
+    canonicalName: "Klabin S.A.",
+    officialDomain: "klabin.com.br",
+    headquartersCountry: "BR",
+    industry: "Papel e embalagens",
+    aliases: ["klabin", "klabin sa", "klabin s.a."],
+    decisionBasis: ["normalized name", "official domain klabin.com.br"],
+  },
+  {
+    canonicalName: "WEG S.A.",
+    officialDomain: "weg.net",
+    headquartersCountry: "BR",
+    industry: "Equipamentos elétricos",
+    aliases: ["weg", "weg sa", "weg s.a."],
+    decisionBasis: ["normalized name", "official domain weg.net"],
+  },
 ];

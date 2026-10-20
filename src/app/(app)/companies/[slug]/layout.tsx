@@ -8,6 +8,7 @@ import { memberResearchStatusLabel } from "@/server/product/research-outcome";
 import { listResearchRunsForCompany, listWorkspaceCompanies } from "@/server/external-research/persistence";
 import { assertEfesoAccess } from "@/server/access/require-efeso-access";
 import { workspaceStaticParams } from "@/lib/workspace";
+import { isExplicitDemoContent } from "@/lib/supabase/env";
 
 export function generateStaticParams() {
   return workspaceStaticParams();
@@ -28,10 +29,16 @@ export default async function CompanyWorkspaceLayout({ children, params }: Layou
   let workspace = null;
   let outcomeLabel: string | null = null;
   let statusLabel: string | null = null;
+  let researchGeography: string | null = null;
+  let corporateCountry: string | null = null;
   try {
     workspace = await getPersistedCompanyWorkspace(slug);
     const briefing = await getCompanyBriefing(slug);
-    if (briefing) outcomeLabel = briefing.outcomeTitle;
+    if (briefing) {
+      outcomeLabel = briefing.outcomeTitle;
+      researchGeography = briefing.researchGeography;
+      corporateCountry = briefing.corporateCountry;
+    }
     try {
       const access = await assertEfesoAccess();
       const companies = await listWorkspaceCompanies(access.workspaceId);
@@ -56,8 +63,11 @@ export default async function CompanyWorkspaceLayout({ children, params }: Layou
         lastResearchedAtLabel={workspace.lastResearchedAtLabel}
         outcomeLabel={outcomeLabel}
         statusLabel={statusLabel}
+        researchGeography={researchGeography}
+        corporateCountry={corporateCountry}
+        demoMode={isExplicitDemoContent()}
       />
-      <div className="mx-auto w-full max-w-3xl flex-1 px-5 py-8 sm:px-8 lg:px-10 print:max-w-none print:px-0 print:py-0">
+      <div className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 sm:px-8 lg:px-10 print:max-w-none print:px-0 print:py-0">
         {children}
       </div>
     </div>

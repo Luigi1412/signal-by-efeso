@@ -22,13 +22,13 @@ export function allowFakeExternalResearch(): boolean {
 
 export function getExternalResearchLimits() {
   return {
-    maxQueries: readPositiveInt("EXTERNAL_RESEARCH_MAX_QUERIES", 8),
-    maxResultsPerQuery: readPositiveInt("EXTERNAL_RESEARCH_MAX_RESULTS_PER_QUERY", 5),
-    maxAcceptedSources: readPositiveInt("EXTERNAL_RESEARCH_MAX_ACCEPTED_SOURCES", 15),
-    initialAcceptedSourceLimit: readPositiveInt("RESEARCH_INITIAL_ACCEPTED_SOURCE_LIMIT", 3),
-    enrichmentSourceLimit: readPositiveInt("RESEARCH_ENRICHMENT_SOURCE_LIMIT", 8),
+    maxQueries: readPositiveInt("EXTERNAL_RESEARCH_MAX_QUERIES", 12),
+    maxResultsPerQuery: readPositiveInt("EXTERNAL_RESEARCH_MAX_RESULTS_PER_QUERY", 8),
+    maxAcceptedSources: readPositiveInt("EXTERNAL_RESEARCH_MAX_ACCEPTED_SOURCES", 32),
+    initialAcceptedSourceLimit: readPositiveInt("RESEARCH_INITIAL_ACCEPTED_SOURCE_LIMIT", 8),
+    enrichmentSourceLimit: readPositiveInt("RESEARCH_ENRICHMENT_SOURCE_LIMIT", 18),
     maxBytesPerSource: readPositiveInt("EXTERNAL_RESEARCH_MAX_BYTES_PER_SOURCE", 4 * 1024 * 1024),
-    maxTotalBytes: readPositiveInt("EXTERNAL_RESEARCH_MAX_TOTAL_BYTES", 20 * 1024 * 1024),
+    maxTotalBytes: readPositiveInt("EXTERNAL_RESEARCH_MAX_TOTAL_BYTES", 28 * 1024 * 1024),
     maxRedirects: readPositiveInt("EXTERNAL_RESEARCH_MAX_REDIRECTS", 3),
     fetchTimeoutMs: readPositiveInt("EXTERNAL_RESEARCH_FETCH_TIMEOUT_MS", 8000),
     defaultHorizonMonths: readPositiveInt("EXTERNAL_RESEARCH_TIME_HORIZON_MONTHS", 24),

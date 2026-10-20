@@ -103,6 +103,34 @@ test("Ollama provider fills omitted required nested objects with nullable defaul
   assert.equal(result.parsedOutput.quantitative.numeric_value, null);
 });
 
+test("Ollama provider coerces suggested_importance aliases to schema enums", async () => {
+  const signalSchema = z.object({
+    schema_version: z.literal("signal-extraction-schema-v1"),
+    signals: z.array(
+      z.object({
+        suggested_importance: z.enum(["low", "medium", "high"]),
+        title: z.string(),
+      }),
+    ),
+  });
+  const provider = new OllamaLanguageModelProvider({
+    fetchImpl: async () =>
+      jsonResponse(200, {
+        message: {
+          content: JSON.stringify({
+            signals: [{ suggested_importance: "High", title: "Expansion" }],
+          }),
+        },
+      }),
+  });
+  const result = await provider.generateStructured({
+    ...request(),
+    schema: signalSchema,
+    schemaVersion: "signal-extraction-schema-v1",
+  });
+  assert.equal(result.parsedOutput.signals[0]?.suggested_importance, "high");
+});
+
 test("Ollama provider coerces numeric strings, confidence fractions, and claim_type literals", async () => {
   const extraction = z.object({
     schema_version: z.literal("claim-extraction-schema-v1"),

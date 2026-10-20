@@ -87,9 +87,75 @@ test("random blog contradicting official release stays weak", () => {
 
 test("query generation stays bounded", () => {
   const queries = generateResearchQueries({ companyName: "Suzano S.A.", officialDomain: "suzano.com.br", country: "BR" });
-  assert.ok(queries.length <= 8);
+  assert.ok(queries.length <= 12);
   assert.ok(queries.some((row) => row.site === "suzano.com.br"));
-  assert.ok(queries.some((row) => /deliveries|backlog|production|capacity/i.test(row.query)));
+  assert.ok(queries.some((row) => /investimento|expansão|aquisição|earnings|resultados/i.test(row.query)));
+  assert.ok(queries.every((row) => row.query.includes('"Suzano S.A."') || Boolean(row.site)));
+});
+
+test("ecommerce and off-topic sources are rejected", () => {
+  const product = assessSource(
+    {
+      url: "https://loja.suvinil.com.br/produto/tinta-acrilica",
+      title: "Tinta Acrílica Suvinil",
+      publisher: "Suvinil",
+      sourceType: "official_page",
+      sourceTier: 1,
+      publishedAt: "2026-04-01",
+    },
+    "suvinil.com.br",
+    new Date("2026-10-16"),
+    "Suvinil",
+  );
+  assert.equal(product.accepted, false);
+  assert.equal(product.rejectionReason, "ecommerce_noise");
+
+  const youtube = assessSource(
+    {
+      url: "https://www.youtube.com/watch?v=abc",
+      title: "Suvinil comercial",
+      publisher: "YouTube",
+      sourceType: "other",
+      sourceTier: 3,
+      publishedAt: "2026-04-01",
+    },
+    "suvinil.com.br",
+    new Date("2026-10-16"),
+    "Suvinil",
+  );
+  assert.equal(youtube.accepted, false);
+  assert.equal(youtube.rejectionReason, "social_media");
+
+  const offTopic = assessSource(
+    {
+      url: "https://www.rad.cvm.gov.br/ENET/frmExibirArquivoIPEExterno.aspx?NumeroProtocoloEntrega=123",
+      title: "Azul S.A. fato relevante",
+      publisher: "CVM",
+      sourceType: "filing",
+      sourceTier: 2,
+      publishedAt: "2026-04-01",
+    },
+    "suvinil.com.br",
+    new Date("2026-10-16"),
+    "Suvinil",
+  );
+  assert.equal(offTopic.accepted, false);
+  assert.equal(offTopic.rejectionReason, "off_topic_company");
+
+  const namedNews = assessSource(
+    {
+      url: "https://finance.yahoo.com/news/sherwin-williams-suvinil-deal",
+      title: "Sherwin-Williams completes Suvinil acquisition",
+      publisher: "Yahoo Finance",
+      sourceType: "news",
+      sourceTier: 2,
+      publishedAt: "2026-04-01",
+    },
+    "suvinil.com.br",
+    new Date("2026-10-16"),
+    "Suvinil",
+  );
+  assert.equal(namedNews.accepted, true);
 });
 
 test("fake discovery accepts official sources and rejects impostors", async () => {

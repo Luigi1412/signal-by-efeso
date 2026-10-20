@@ -55,10 +55,7 @@ test("no_reliable_sources maps failure code", () => {
 });
 
 test("member status labels avoid technical jargon", () => {
-  assert.equal(
-    memberResearchStatusLabel("completed", "facts_only"),
-    "Fatos encontrados, sem evidência suficiente para um sinal",
-  );
+  assert.equal(memberResearchStatusLabel("completed", "facts_only"), "Concluída — fatos sem sinal");
   assert.equal(memberResearchStatusLabel("generating_intelligence"), "Pesquisa em andamento");
   assert.doesNotMatch(memberResearchStatusLabel("failed"), /CLAIMS_NOT_FOUND|pipeline/i);
 });

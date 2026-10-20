@@ -370,6 +370,31 @@ export async function insertCompanyAlias(workspaceId: string, companyId: string,
   );
 }
 
+export async function updateCompanyIdentity(input: {
+  workspaceId: string;
+  companyId: string;
+  displayName: string;
+  domain: string | null;
+  country: string | null;
+  industry: string | null;
+}): Promise<void> {
+  const { error } = await db()
+    .from("companies")
+    .update({
+      display_name: input.displayName,
+      primary_domain: input.domain,
+      primary_website_url: input.domain ? `https://${input.domain}` : null,
+      primary_country_code: input.country && input.country.length === 2 ? input.country : null,
+      industry: input.industry,
+      resolution_status: "resolved",
+      resolved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("workspace_id", input.workspaceId)
+    .eq("id", input.companyId);
+  if (error) throw error;
+}
+
 export async function insertAnalysis(input: {
   workspaceId: string;
   companyId: string;

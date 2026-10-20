@@ -1,4 +1,6 @@
 import { hostnameOf, isSubdomainOrEqual, registrableDomain } from "./normalize";
+import { isAggregatorHost } from "./aggregators";
+import { isRejectedNoiseUrl } from "./source-noise";
 import type { AssessedSource } from "./types";
 
 export type SourcePriorityBand =
@@ -76,10 +78,11 @@ export function sourcePriorityBand(source: AssessedSource, officialDomain?: stri
 export function rankSourcesForInitialPass(
   sources: AssessedSource[],
   officialDomain?: string | null,
+  companyName?: string | null,
 ): AssessedSource[] {
   return [...sources].sort((left, right) => {
-    const leftSubstance = urlSubstanceScore(left.canonicalUrl || left.url, left.title, officialDomain);
-    const rightSubstance = urlSubstanceScore(right.canonicalUrl || right.url, right.title, officialDomain);
+    const leftSubstance = urlSubstanceScore(left.canonicalUrl || left.url, left.title, officialDomain, companyName);
+    const rightSubstance = urlSubstanceScore(right.canonicalUrl || right.url, right.title, officialDomain, companyName);
     // Large substance gaps (e.g. recent operational disclosure vs stale earnings title) outweigh band.
     if (Math.abs(leftSubstance - rightSubstance) >= 40) return rightSubstance - leftSubstance;
     const bandDelta = BAND_RANK[sourcePriorityBand(left, officialDomain)] - BAND_RANK[sourcePriorityBand(right, officialDomain)];
@@ -96,10 +99,12 @@ export function splitInitialAndDeferred(
   accepted: AssessedSource[],
   officialDomain: string | null | undefined,
   initialLimit: number,
+  companyName?: string | null,
 ): { initial: AssessedSource[]; deferred: AssessedSource[] } {
   const ranked = rankSourcesForInitialPass(
     accepted.filter((row) => row.accepted),
     officialDomain,
+    companyName,
   );
   const limit = Math.max(1, initialLimit);
   return {
@@ -122,19 +127,30 @@ function comparePublishedAt(left: string | null, right: string | null): number {
   return left.localeCompare(right);
 }
 
-export function urlSubstanceScore(url: string, title?: string | null, officialDomain?: string | null): number {
+export function urlSubstanceScore(
+  url: string,
+  title?: string | null,
+  officialDomain?: string | null,
+  companyName?: string | null,
+): number {
   const normalizedUrl = url.toLowerCase();
   const normalizedTitle = (title ?? "").toLowerCase();
   const hay = `${normalizedUrl} ${normalizedTitle}`;
   const path = normalizedUrl;
+  const officialHost = officialDomain?.replace(/^www\./, "").toLowerCase() ?? null;
+  const isOfficial = Boolean(officialHost && normalizedUrl.includes(officialHost));
+  const named = mentionsCompany(hay, companyName);
   let score = 0;
   if (/\.pdf(?:$|\?)/i.test(normalizedUrl)) score += 50;
   if (/news-post|\/noticias\/|press-release/.test(hay)) score += 40;
   if (/resultado|earnings|2q|1q|3q|4q|quarterly|financial results/.test(hay) && !/central-de-resultados|results-center/.test(path)) {
     score += 40;
   }
-  // Prefer operational performance disclosures over generic earnings shells when titles match.
-  if (/deliver(y|ies)|backlog|production|throughput|capacity|ramp[- ]?up|nivelamento|aircraft delivered/.test(hay)) {
+  // Operational disclosures only boost when they clearly belong to this company (or its official domain).
+  // Otherwise aerospace/backlog articles can outrank retail IR pages for unrelated queries.
+  const operationalHit =
+    /deliver(y|ies)|backlog|production|throughput|capacity|ramp[- ]?up|nivelamento|aircraft delivered/.test(hay);
+  if (operationalHit && (named || isOfficial)) {
     score += 45;
   }
   if (/edgar|20-f|6-k|10-k/.test(hay)) score += 35;
@@ -144,11 +160,60 @@ export function urlSubstanceScore(url: string, title?: string | null, officialDo
     else if (year <= 2023) score -= 35;
   }
   if (isListingOrShell(normalizedUrl, normalizedTitle)) score -= 40;
-  if (officialDomain && normalizedUrl.includes(officialDomain.replace(/^www\./, "").toLowerCase())) score += 5;
+  if (isRejectedNoiseUrl(normalizedUrl)) score -= 80;
+  if (isAggregatorHost(normalizedUrl)) score -= 70;
+  if (isOfficial) score += 5;
+  if (isOfficial && /\.pdf(?:$|\?)/i.test(normalizedUrl)) score += 35;
+  if (named) score += 30;
+  else if (companyTokens(companyName).length > 0 && !isOfficial) score -= 50;
+  // Prefer named articles on reputable press over generic IR index pages.
+  if (named && /reuters|bloomberg|valor\.globo|exame\.com|infomoney|yahoo\.com|cnbc/i.test(normalizedUrl)) {
+    score += 20;
+  }
+  if (/aquisi[cç][aã]o|fus[aã]o|investimento|expans[aã]o|fábrica|capex|m&a|takeover/i.test(hay) && named) {
+    score += 25;
+  }
   // Thin media-center detail pages often lack article body; prefer substantive articles/PDFs.
   if (/mediatype=news&detail=/i.test(normalizedUrl) && !/\.pdf(?:$|\?)/i.test(normalizedUrl)) score -= 20;
   return score;
 }
+
+function companyTokens(companyName?: string | null): string[] {
+  if (!companyName) return [];
+  return companyName
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 4 && !GENERIC_COMPANY_TOKENS.has(token));
+}
+
+function mentionsCompany(hay: string, companyName?: string | null): boolean {
+  const tokens = companyTokens(companyName);
+  if (tokens.length === 0) return false;
+  const normalizedHay = hay
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+  return tokens.some((token) => normalizedHay.includes(token));
+}
+
+const GENERIC_COMPANY_TOKENS = new Set([
+  "ltda",
+  "limitada",
+  "company",
+  "companies",
+  "group",
+  "grupo",
+  "holding",
+  "sa",
+  "inc",
+  "corp",
+  "corporation",
+  "plc",
+  "llc",
+]);
 
 function inferTitleYear(title?: string | null): number | null {
   if (!title) return null;

@@ -26,6 +26,11 @@ export function isDemoMode(): boolean {
   return process.env.DEMO_AUTH_MODE === "true";
 }
 
+/** Product demo badge/footer — only when DEMO_MODE is explicitly true (never via auth fallback). */
+export function isExplicitDemoContent(): boolean {
+  return process.env.DEMO_MODE?.trim().toLowerCase() === "true";
+}
+
 export function isDemoAuthMode(): boolean {
   return isDemoMode() && process.env.DEMO_AUTH_MODE === "true";
 }

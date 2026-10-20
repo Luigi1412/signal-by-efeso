@@ -17,9 +17,29 @@ export function resolveCompanyEntity(input: {
   country?: string | null;
   industry?: string | null;
   existing?: ExistingCompanyRecord[];
+  /** Official domain confirmed by the user — must not overwrite corporate HQ with research geography. */
+  selectedDomain?: string | null;
 }): EntityResolution {
   const normalized = normalizeCompanyQuery(input.query);
   if (!normalized) return { kind: "unresolved", suggestions: [] };
+
+  const selectedDomain = input.selectedDomain?.replace(/^www\./, "").toLowerCase() || null;
+  if (selectedDomain) {
+    const byDomain = PUBLIC_COMPANY_CATALOG.find(
+      (identity) => identity.officialDomain.replace(/^www\./, "").toLowerCase() === selectedDomain,
+    );
+    if (byDomain) {
+      return {
+        kind: "resolved",
+        candidate: {
+          ...byDomain,
+          existingCompanyId: input.existing?.find((row) => (row.domain ?? "").replace(/^www\./, "") === selectedDomain)?.id ?? null,
+          existingSlug: input.existing?.find((row) => (row.domain ?? "").replace(/^www\./, "") === selectedDomain)?.slug ?? null,
+          decisionBasis: [...byDomain.decisionBasis, "user-confirmed official domain"],
+        },
+      };
+    }
+  }
 
   const existingMatches = (input.existing ?? []).flatMap((row) => {
     const names = [row.displayName, row.slug, ...(row.aliases ?? []), row.domain ?? ""];
@@ -45,6 +65,7 @@ export function resolveCompanyEntity(input: {
   if (unique.length > 1) {
     const exact = unique.filter((candidate) => isExactOrAlias(candidate, normalized) && !isPartialOnly(candidate));
     if (exact.length === 1 && exact[0]) return { kind: "resolved", candidate: exact[0] };
+    // Research geography may filter local subsidiaries (e.g. Toyota BR) but must not invent HQ.
     const countryFiltered = input.country
       ? unique.filter((candidate) => candidate.headquartersCountry.toUpperCase() === input.country?.trim().toUpperCase())
       : unique;
@@ -68,7 +89,13 @@ export function resolveCompanyEntity(input: {
 
 function identityMatches(identity: CompanyIdentity, normalized: string, country?: string | null, industry?: string | null): boolean {
   const names = [identity.canonicalName, ...identity.aliases].map(normalizeCompanyQuery);
-  const nameHit = names.some((name) => name === normalized || name.startsWith(`${normalized} `) || normalized.startsWith(name));
+  const nameHit = names.some(
+    (name) =>
+      name === normalized ||
+      name.startsWith(`${normalized} `) ||
+      normalized.startsWith(name) ||
+      name.includes(normalized),
+  );
   if (!nameHit) return false;
   if (country && identity.headquartersCountry.toUpperCase() !== country.trim().toUpperCase() && normalized === "vale") {
     return identity.headquartersCountry === "BR";
@@ -77,6 +104,21 @@ function identityMatches(identity: CompanyIdentity, normalized: string, country?
     return false;
   }
   return true;
+}
+
+/** Infer a coarse corporate domicile hint from the registrable domain — never from research scope. */
+export function inferHeadquartersFromDomain(domain: string | null | undefined): string {
+  if (!domain) return "";
+  const host = domain.replace(/^www\./, "").toLowerCase();
+  if (host.endsWith(".br")) return "BR";
+  if (host.endsWith(".fr")) return "FR";
+  if (host.endsWith(".it")) return "IT";
+  if (host.endsWith(".de")) return "DE";
+  if (host.endsWith(".uk") || host.endsWith(".co.uk")) return "GB";
+  if (host.endsWith(".jp")) return "JP";
+  if (host.endsWith(".se")) return "SE";
+  if (host.endsWith(".be")) return "BE";
+  return "";
 }
 
 function isExactOrAlias(candidate: EntityCandidate, normalized: string): boolean {
