@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "worker:research": "tsx scripts/research-worker.ts",
+    "worker:research": "node --import ./scripts/stub-server-only.mjs --import tsx --env-file=.env.local scripts/research-worker.ts",
     "user:provision": "tsx scripts/provision-user.ts",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc --noEmit",
