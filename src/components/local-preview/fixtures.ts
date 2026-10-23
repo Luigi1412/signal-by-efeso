@@ -49,6 +49,7 @@ export interface PreviewScenario {
   briefing: CompanyBriefing;
   sources: ExternalSourceCandidateRow[];
   run: ExternalResearchRunRow;
+  signalFactIds: Record<string, string[]>;
 }
 export function previewScenario(slug: ScenarioSlug): PreviewScenario {
   const signal = slug === "horizonte-industrial";
@@ -73,7 +74,7 @@ export function previewScenario(slug: ScenarioSlug): PreviewScenario {
     researchLimitations: [{ id: "preview-local-limit", text: signal ? "Todos os fatos, documentos, métricas e aderências desta página são fictícios. Não houve pesquisa nem consulta ao Knowledge Pack EFESO real." : factsOnly ? "Os fatos financeiros do cenário não demonstram mudança operacional; não se força signal, Fit ou oportunidade." : "Sem fonte primária densa, data verificável e evidência material suficiente. Nenhum signal ou oportunidade é proposto.", severity: "medium", kind: "research_limitation" }], commercialGapNote: null, efesoFitState: signal ? "FIT_FOUND" : "FIT_NOT_EVALUATED", efesoFitMessage: signal ? "Aderência ilustrativa fundamentada na cadeia fictícia de evidência abaixo. Nenhum conteúdo privado EFESO foi consultado." : "Fit não avaliado neste cenário, por ausência de movimento qualificado.", publishFullReport: signal || factsOnly, phaseTimings: [],
   };
   const run: ExternalResearchRunRow = { id: `preview-local-${slug}`, workspace_id: "preview-local-workspace", requested_query: name, normalized_query: name.toLowerCase(), requested_country: "BR", requested_industry: company.industry, time_horizon_months: 24, resolved_company_id: company.id, analysis_id: "preview-local-analysis", research_run_id: "preview-local-legacy", status: "completed", started_at: DATE, completed_at: DATE, failure_reason: null, failure_code: null, source_count: sources.length, accepted_source_count: briefing.sourceCount, rejected_source_count: signal || factsOnly ? 0 : 1, unavailable_source_count: 0, resolution_payload: { origin: "local_preview" }, created_by: null, created_at: DATE, updated_at: DATE };
-  return { origin: "local_preview", company, briefing, sources, run };
+  return { origin: "local_preview", company, briefing, sources, run, signalFactIds: signal ? { [movement.id]: expansionFacts.map(f => f.id) } : {} };
 }
 
 export function previewCompanyHistory(): CompanyHistoryRow[] {

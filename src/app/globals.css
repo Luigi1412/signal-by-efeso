@@ -65,7 +65,7 @@
 
 :root {
   /* Warm off-white canvas, white surfaces, graphite text */
-  --background: oklch(0.982 0.003 85);
+  --background: oklch(0.992 0.002 85);
   --foreground: oklch(0.21 0.008 260);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.21 0.008 260);
@@ -76,7 +76,7 @@
   --secondary: oklch(0.962 0.003 85);
   --secondary-foreground: oklch(0.23 0.008 260);
   --muted: oklch(0.962 0.003 85);
-  --muted-foreground: oklch(0.52 0.01 260);
+  --muted-foreground: oklch(0.47 0.01 260);
   --accent: oklch(0.955 0.003 85);
   --accent-foreground: oklch(0.23 0.008 260);
   --destructive: oklch(0.55 0.2 27);
@@ -196,4 +196,10 @@
   table {
     overflow: visible !important;
   }
+}
+
+@layer base {
+  a:focus-visible, button:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+  summary { border-radius: 3px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 }

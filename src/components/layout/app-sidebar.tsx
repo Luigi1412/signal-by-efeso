@@ -28,12 +28,12 @@ interface AppSidebarProps {
 
 export function AppSidebar({ className, onNavigate, user, showAdminNav = false }: AppSidebarProps) {
   return (
-    <aside className={cn("flex h-full w-60 flex-col border-r bg-sidebar print:hidden", className)} data-print-hide>
-      <div className="flex h-14 items-center px-4">
+    <aside className={cn("flex h-full w-52 flex-col border-r border-border/60 bg-sidebar print:hidden", className)} data-print-hide>
+      <div className="flex h-24 items-center px-6">
         <Brand />
       </div>
 
-      <div className="flex flex-1 flex-col px-3 pt-2">
+      <div className="flex flex-1 flex-col px-4 pt-2">
         <SidebarNav items={primaryNav} onNavigate={onNavigate} />
 
         {showAdminNav ? (

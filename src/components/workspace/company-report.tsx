@@ -1,15 +1,11 @@
 "use client";
 
 import { ScopedLink as Link, useLocalPreview } from "@/components/local-preview/runtime";
-import { useEffect, useMemo, useState } from "react";
-import { StatusBadge } from "@/components/shared/status-badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ui } from "@/i18n";
-import { memberResearchStatusLabel } from "@/server/product/research-outcome";
+import { ArrowDown, ArrowUpRight } from "lucide-react";
 import { routes } from "@/lib/routes";
-import { cn } from "@/lib/utils";
-import type { CompanyBriefing } from "@/server/services/company-briefing-service";
+import type { CompanyBriefing, ValidatedFactView } from "@/server/services/company-briefing-service";
 import type { ExternalResearchRunRow, ExternalSourceCandidateRow } from "@/server/external-research/types";
+import styles from "./company-report.module.css";
 
 interface CompanyReportProps {
   slug: string;
@@ -17,443 +13,141 @@ interface CompanyReportProps {
   sources: ExternalSourceCandidateRow[];
   history: ExternalResearchRunRow[];
   demoMode?: boolean;
+  signalFactIds?: Record<string, string[]>;
 }
 
-type TocSection = { id: string; number: string; title: string };
+const sourceTypes: Record<string, string> = { official_page: "Página oficial", press_release: "Comunicado", annual_report: "Relatório anual", sustainability_report: "Sustentabilidade", earnings_release: "Resultados financeiros", filing: "Documento regulatório", regulator: "Órgão regulador", news: "Notícia", other: "Outra fonte" };
+const qualities: Record<string, string> = { primary: "Primária", authoritative_secondary: "Secundária de referência", secondary: "Secundária", weak: "Limitada" };
+const retained = new Set(["accepted", "fetched", "ingested", "processed"]);
 
-const RETAINED_SOURCE_STATUSES = new Set(["accepted", "fetched", "ingested", "processed"]);
+/** Presentation only: outcome, facts, signals and Fit are supplied by the existing assessment. */
+export function CompanyReport({ slug, briefing: b, sources, history, demoMode = false, signalFactIds = {} }: CompanyReportProps) {
+  const preview = useLocalPreview();
+  const insufficient = b.outcome === "insufficient_evidence";
+  const compact = insufficient || !b.publishFullReport;
+  const factsOnly = b.outcome === "facts_only";
+  const full = b.publishFullReport && !insufficient;
+  const material = b.outcome === "signal_found" && full;
+  const accepted = sources.filter(s => s.status !== "rejected" && (retained.has(s.status) || s.snapshot_id));
+  const discarded = sources.filter(s => s.status === "rejected");
+  const headline = insufficient ? "Evidência pública insuficiente" : material ? b.signals[0]?.title ?? b.outcomeTitle : factsOnly ? "Fatos confirmados, sem movimento material identificado" : b.outcomeTitle;
+  const summary = material ? b.signals[0]?.summary || b.reasons[0] || b.outcomeBody : b.reasons[0] || b.outcomeBody;
+  const limitations = [...new Set(b.researchLimitations.map(l => l.text))].filter(text => text !== summary && text !== b.outcomeBody);
+  const hasMeaning = material && (b.meaningHeadline || b.meaningSummary || b.workingHypotheses.length > 0);
 
-export function CompanyReport({ slug, briefing, sources, history, demoMode = false }: CompanyReportProps) {
-  const localPreview = useLocalPreview();
-  const compact = !briefing.publishFullReport || briefing.outcome === "insufficient_evidence";
-  const retainedSources = sources
-    .filter((source) => RETAINED_SOURCE_STATUSES.has(source.status) || Boolean(source.snapshot_id))
-    .filter((source) => source.status !== "rejected")
-    .sort((left, right) => qualityRank(left.source_quality) - qualityRank(right.source_quality));
-  const discardedSources = sources.filter((source) => source.status === "rejected");
-  const limitations = briefing.researchLimitations;
-  const companyRisks = briefing.reportRisks.filter((risk) => risk.kind === "company" || risk.kind === "hypothesis");
+  return <article className={styles.report} aria-label="Inteligência da empresa">
+    <header id="report-resumo" className={styles.lead}>
+      <p className="eyebrow text-brand">{material ? "Movimento identificado" : compact ? "Limites da pesquisa" : factsOnly ? "Somente fatos" : b.outcomeTitle}</p>
+      <h2 className={styles.headline}>{headline}</h2>
+      <p className={styles.summary}>{summary}</p>
+      {!compact && <p className={styles.counts}>
+        {material && <span>{b.signals.length} {b.signals.length === 1 ? "movimento" : "movimentos"}</span>}
+        <span>{b.validatedFacts.length} {b.validatedFacts.length === 1 ? "fato validado" : "fatos validados"}</span>
+        <span>{b.primarySourceCount} {b.primarySourceCount === 1 ? "fonte primária" : "fontes primárias"}</span>
+        <a href={material ? "#report-evidencias" : "#report-movimentos"} onClick={material ? () => { const evidence = document.getElementById("report-evidencias"); if (evidence instanceof HTMLDetailsElement) evidence.open = true; } : undefined}>Ver evidências <ArrowDown size={13} aria-hidden /></a>
+      </p>}
+    </header>
 
-  const sections = useMemo(() => {
-    const items: TocSection[] = [{ id: "resumo", number: "01", title: "Resumo executivo" }];
-    if (!compact || briefing.validatedFacts.length > 0 || briefing.signals.length > 0) {
-      items.push({ id: "movimentos", number: "02", title: "Movimentos e fatos" });
-    }
-    if (!compact && (briefing.meaningHeadline || briefing.meaningSummary || briefing.workingHypotheses.length > 0)) {
-      items.push({ id: "leitura", number: "03", title: "O que isso pode significar" });
-    }
-    if (!compact && briefing.signals.length > 0) items.push({ id: "efeso", number: String(items.length + 1).padStart(2, "0"), title: "Aderências EFESO" });
-    items.push({ id: "fontes", number: String(items.length + 1).padStart(2, "0"), title: "Fontes e limitações" });
-    return items;
-  }, [compact, briefing]);
+    {compact ? <>
+      <Section title="O que conseguimos confirmar">
+        {b.validatedFacts.length ? <FactList facts={b.validatedFacts} sources={sources} /> : <p>Nenhuma evidência material foi validada nesta pesquisa.</p>}
+      </Section>
+      <Section title="O que faltou">
+        <CopyList items={limitations.length ? limitations : [b.outcomeBody]} />
+      </Section>
+    </> : <>
+      {hasMeaning && <Section id="report-leitura" title="Por que isso importa">
+        {b.meaningHeadline && <p className={styles.emphasis}>{b.meaningHeadline}</p>}
+        {b.meaningSummary && <p>{b.meaningSummary}</p>}
+        {b.workingHypotheses.map(h => <div key={h.id} className="mt-4"><p className="eyebrow">Hipótese operacional</p><h3>{h.title}</h3><p>{h.summary}</p><p className={styles.note}>{h.confidenceNote}</p></div>)}
+        <CopyList items={b.reportRisks.filter(r => r.kind === "company" || r.kind === "hypothesis").map(r => r.text)} className={styles.note} />
+      </Section>}
 
-  return (
-    <div className="grid gap-10 lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="hidden print:hidden lg:block" data-print-hide>
-        <div className="sticky top-24">
-          <ReportToc sections={sections} />
-        </div>
-      </aside>
+      <Section id="report-movimentos" title={material ? "Movimentos relevantes" : "O que os documentos confirmam"}>
+        {material && b.signals.length > 0 && <div className={styles.movements}>{b.signals.map((signal, index) => <div key={signal.id} className={styles.movement}>
+          <span className={styles.index} aria-hidden>{String(index + 1).padStart(2, "0")}</span>
+          <div><h3>{signal.title}</h3><p>{signal.summary}</p>
+            <p className={styles.note}>{[signal.eventDate, signal.geography].filter(Boolean).join(" · ")}</p>
+            {signalFactIds[signal.id]?.some(id => b.validatedFacts.some(f => f.id === id)) ? <details className={styles.disclosure}>
+              <summary>{b.validatedFacts.filter(f => signalFactIds[signal.id]?.includes(f.id)).length} evidências deste movimento</summary>
+              <FactList facts={b.validatedFacts.filter(f => signalFactIds[signal.id]?.includes(f.id))} sources={sources} />
+            </details> : <a className={styles.evidenceLink} href="#report-evidencias" onClick={() => { const evidence = document.getElementById("report-evidencias"); if (evidence instanceof HTMLDetailsElement) evidence.open = true; }}>Consultar evidências da pesquisa <ArrowDown size={13} aria-hidden /></a>}
+          </div>
+        </div>)}</div>}
+        {!material && <FactList facts={b.validatedFacts} sources={sources} compact />}
+        {material && b.validatedFacts.length > 0 && <Evidence facts={b.validatedFacts} sources={sources} />}
+      </Section>
 
-      <article className="min-w-0 rounded-xl border border-border/70 bg-card shadow-[0_1px_0_rgba(15,23,42,0.04)] print:rounded-none print:border-0 print:shadow-none">
-        <header className="border-b border-border/70 px-6 py-7 sm:px-8 sm:py-8">
-          <p className="eyebrow text-brand">{ui.report.kicker.replace("{version}", "1")}</p>
-          <h2 className="mt-3 max-w-[28ch] text-[1.75rem] leading-tight font-semibold tracking-[-0.02em] text-foreground sm:text-[2rem]">
-            {briefing.outcomeTitle}
-          </h2>
-          <p className="mt-3 max-w-[62ch] text-[15px] leading-[1.7] text-muted-foreground">{briefing.outcomeBody}</p>
-          <IdentityBlock briefing={briefing} />
-          {briefing.executionStatus ? (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Execução: <span className="font-medium text-foreground">{memberResearchStatusLabel(briefing.executionStatus === "completed_with_warnings" ? "partial" : briefing.executionStatus, briefing.outcome)}</span>
-              {" · "}
-              Resultado: <span className="font-medium text-foreground">{briefing.outcomeTitle}</span>
-            </p>
-          ) : null}
-        </header>
+      {factsOnly && <Section title="Por que não há sinal">
+        <p>{b.outcomeBody}</p>
+        <CopyList items={limitations} className={styles.note} />
+      </Section>}
 
-        <div className="grid grid-cols-2 gap-px border-b border-border/70 bg-border/70 sm:grid-cols-4">
-          <MetricTile label="Fatos" value={String(briefing.validatedFacts.length)} note="validados" />
-          <MetricTile label="Sinais" value={String(briefing.signals.length)} note="ativos" />
-          <MetricTile
-            label="Fontes"
-            value={String(retainedSources.length || briefing.sourceCount)}
-            note={`${briefing.primarySourceCount} primária(s)`}
-          />
-          <MetricTile
-            label="Oportunidades"
-            value={String(briefing.opportunities.length)}
-            note="sustentadas"
-          />
-        </div>
+      {material && b.signals.length > 0 && <Section id="report-efeso" title="Possível aderência EFESO">
+        {b.topFit ? <>
+          <div className={styles.fitHeading}><h3>{b.topFit.name}</h3><span>Aderência {({ high: "alta", medium: "média", low: "baixa" } as Record<string, string>)[b.topFit.level] ?? "em avaliação"}</span></div>
+          <p>{b.topFit.reason || b.efesoFitMessage}</p>
+          {b.fits[0]?.operationalChain && <p className={styles.note}><strong>Incerteza.</strong> {b.fits[0].operationalChain.uncertainty}</p>}
+        </> : <p>{b.efesoFitMessage}</p>}
+      </Section>}
 
-        <div className="flex flex-col gap-14 px-6 py-10 sm:px-8 sm:py-12">
-          <Chapter id="resumo" number="01" title="Resumo executivo">
-            <div className="space-y-4">
-              <p className="max-w-[62ch] text-[15px] leading-[1.7] text-foreground/90">
-                {briefing.reasons[0] ?? briefing.outcomeBody}
-              </p>
-              {compact ? (
-                <div className="rounded-lg border border-hypothesis-border/50 bg-hypothesis-muted/20 px-4 py-3">
-                  <p className="text-sm font-medium text-foreground">Por que não concluímos</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                    {limitations.slice(0, 4).map((item) => (
-                      <li key={item.id}>{item.text}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          </Chapter>
+      {material && b.opportunities.length > 0 && <Section title={b.opportunities.length === 1 ? "Oportunidade a validar" : "Oportunidades a validar"}>
+        {b.opportunities.map(o => <div key={o.id} className={styles.opportunity}>
+          <h3>{o.title}</h3>
+          <p>{o.potentialNeed || o.summary}</p>
+          <dl className={styles.nextSteps}>
+            {[["O que validar", o.clientValidation], ["Próximo passo", o.nextStep], ["Incerteza", o.uncertaintyStatement]].filter(([, value]) => Boolean(value)).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+          </dl>
+        </div>)}
+      </Section>}
+    </>}
 
-          {(!compact || briefing.validatedFacts.length > 0 || briefing.signals.length > 0) && (
-            <Chapter id="movimentos" number="02" title="Movimentos e fatos relevantes">
-              {briefing.signals.length > 0 ? (
-                <div className="mb-6 space-y-3">
-                  {briefing.signals.slice(0, 6).map((signal) => (
-                    <div key={signal.id} className="border-l-2 border-brand/40 pl-4">
-                      <h3 className="text-[15px] font-semibold text-foreground">{signal.title}</h3>
-                      {signal.summary ? (
-                        <p className="mt-1 text-sm text-muted-foreground">{signal.summary}</p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {briefing.validatedFacts.length === 0 ? (
-                <EmptyCopy text="Nenhum fato material validado foi retido." />
-              ) : (
-                <div className="space-y-4">
-                  {briefing.validatedFacts.slice(0, compact ? 3 : 12).map((fact) => (
-                    <div key={fact.id}>
-                      <p className="text-[15px] leading-relaxed text-foreground">{fact.statement}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {fact.period} · {fact.sourceUrl ? <a href={fact.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">{fact.sourceLabel}</a> : fact.sourceLabel} · {fact.modality}
-                        {fact.sourceDate ? ` · Publicação: ${fact.sourceDate}` : ""}
-                      </p>
-                      {fact.excerpt ? <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Ver evidência original</summary><blockquote className="mt-2 border-l pl-3">{fact.excerpt}</blockquote></details> : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Chapter>
-          )}
-
-          {!compact && (briefing.meaningHeadline || briefing.meaningSummary || briefing.workingHypotheses.length > 0) ? (
-            <Chapter id="leitura" number="03" title="O que isso pode significar">
-              {briefing.meaningHeadline ? (
-                <p className="max-w-[62ch] text-[15px] font-medium text-foreground">{briefing.meaningHeadline}</p>
-              ) : null}
-              {briefing.meaningSummary ? (
-                <p className="mt-3 max-w-[62ch] text-sm leading-relaxed text-muted-foreground">
-                  {briefing.meaningSummary}
-                </p>
-              ) : null}
-              {briefing.workingHypotheses.map((hypothesis) => (
-                <div key={hypothesis.id} className="mt-5 border-l-2 border-hypothesis/50 pl-4">
-                  <StatusBadge tone="hypothesis" size="sm">
-                    Hipótese
-                  </StatusBadge>
-                  <h3 className="mt-2 text-[15px] font-semibold">{hypothesis.title}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{hypothesis.summary}</p>
-                </div>
-              ))}
-              {companyRisks.length > 0 ? (
-                <div className="mt-6 space-y-2">
-                  <p className="eyebrow">Riscos da empresa / hipóteses</p>
-                  {companyRisks.map((risk) => (
-                    <p key={risk.id} className="text-sm text-muted-foreground">
-                      {risk.text}
-                    </p>
-                  ))}
-                </div>
-              ) : null}
-            </Chapter>
-          ) : null}
-
-          {!compact && briefing.signals.length > 0 ? (
-          <Chapter id="efeso" number={sections.find((s) => s.id === "efeso")?.number ?? "04"} title="Possíveis aderências EFESO">
-            <p className="max-w-[62ch] text-sm leading-relaxed text-muted-foreground">{briefing.efesoFitMessage}</p>
-            {briefing.topFit ? (
-              <p className="mt-3 text-sm text-foreground">
-                <span className="font-medium">{briefing.topFit.name}</span> — {({high:"alta",medium:"média",low:"baixa"} as Record<string,string>)[briefing.topFit.level] ?? "em avaliação"}
-              </p>
-            ) : null}
-            {briefing.topFit?.reason ? <p className="mt-2 text-sm text-muted-foreground">{briefing.topFit.reason}</p> : null}
-            {briefing.fits[0]?.operationalChain ? <p className="mt-2 text-sm text-muted-foreground">Hipótese: {briefing.fits[0].operationalChain.possibleNeed} Incerteza: {briefing.fits[0].operationalChain.uncertainty}</p> : null}
-            {briefing.opportunities.length > 0 ? (
-              <div className="mt-4 space-y-3">
-                {briefing.opportunities.map((opportunity) => (
-                  <div key={opportunity.id}>
-                    <h3 className="text-[15px] font-semibold">{opportunity.title}</h3>
-                    {opportunity.summary ? (
-                      <p className="mt-1 text-sm text-muted-foreground">{opportunity.summary}</p>
-                    ) : null}
-                    <dl className="mt-3 space-y-2 text-sm text-muted-foreground">
-                      {[["Implicação operacional",opportunity.operationalImplication],["Necessidade potencial",opportunity.potentialNeed],["Capacidade EFESO",opportunity.primaryCapability],["Incerteza",opportunity.uncertaintyStatement],["O que validar",opportunity.clientValidation],["Próximo passo",opportunity.nextStep]].filter(([,value])=>Boolean(value)).map(([label,value])=>(<div key={label}><dt className="font-medium text-foreground">{label}</dt><dd>{value}</dd></div>))}
-                    </dl>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </Chapter>
-          ) : null}
-
-          <Chapter
-            id="fontes"
-            number={sections.find((s) => s.id === "fontes")?.number ?? "05"}
-            title="Fontes e limitações"
-            description={
-              retainedSources.length > 0
-                ? `${retainedSources.length} retida(s)${discardedSources.length > 0 ? ` · ${discardedSources.length} descartada(s)` : ""}.`
-                : undefined
-            }
-          >
-            {retainedSources.length === 0 ? (
-              <EmptyCopy text="Nenhuma fonte pública retida nesta pesquisa." />
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-border/80">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="h-9 px-4 text-xs">Fonte</TableHead>
-                      <TableHead className="h-9 px-4 text-xs">Editor</TableHead>
-                      <TableHead className="h-9 px-4 text-xs">Tipo</TableHead>
-                      <TableHead className="h-9 px-4 text-xs">Qualidade</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {retainedSources.map((source) => (
-                      <TableRow key={source.id} className="hover:bg-transparent">
-                        <TableCell className="max-w-[280px] px-4 py-3 text-sm font-medium">
-                          <a href={source.url} target="_blank" rel="noreferrer" className="underline-offset-4 hover:underline">
-                            {source.title || source.publisher || source.url}
-                          </a>
-                        </TableCell>
-                        <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                          {source.publisher || "—"}
-                        </TableCell>
-                        <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                          {({official_page:"Página oficial",press_release:"Comunicado",annual_report:"Relatório anual",sustainability_report:"Relatório de sustentabilidade",earnings_release:"Resultados financeiros",filing:"Documento regulatório",regulator:"Órgão regulador",news:"Notícia",other:"Outra fonte"})[source.source_type]}
-                        </TableCell>
-                        <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                          {source.source_quality ? ({primary:"Primária",authoritative_secondary:"Secundária de referência",secondary:"Secundária",weak:"Limitada"})[source.source_quality] : "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            {limitations.length > 0 ? (
-              <div className="mt-5 space-y-2">
-                <p className="eyebrow">Limitações da pesquisa</p>
-                {limitations.map((item) => (
-                  <p key={item.id} className="text-sm text-muted-foreground">
-                    {item.text}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-
-            {briefing.phaseTimings.length > 0 ? (
-              <p className="mt-4 text-xs text-muted-foreground">
-                Tempos:{" "}
-                {briefing.phaseTimings.map((row) => `${row.phase} ${(row.ms / 1000).toFixed(1)}s`).join(" · ")}
-              </p>
-            ) : null}
-
-            {discardedSources.length > 0 ? (
-              <details className="mt-5 rounded-lg border border-border/70 px-4 py-3">
-                <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
-                  Fontes descartadas ({discardedSources.length})
-                </summary>
-                <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
-                  {discardedSources.slice(0, 40).map((source) => (
-                    <p key={source.id} className="text-sm text-muted-foreground">
-                      <span className="text-foreground">{source.title || source.publisher || source.url}</span>
-                      {source.rejection_reason ? ` — ${rejectionReasonLabel(source.rejection_reason)}` : null}
-                    </p>
-                  ))}
-                </div>
-              </details>
-            ) : null}
-
-            {history.length > 0 ? (
-              <p className="mt-6 text-sm">
-                <Link href={routes.research(history[0]!.id)} className="underline-offset-4 hover:underline">
-                  Ver pesquisa mais recente
-                </Link>
-              </p>
-            ) : null}
-          </Chapter>
-        </div>
-
-        <footer className="border-t border-border/70 px-6 py-4 text-xs text-muted-foreground sm:px-8">
-          {localPreview ? "PREVIEW LOCAL · Dados, fontes, métricas, Fits e oportunidades fictícios. Exclusivo para revisão visual; não valida pesquisa real." : demoMode
-            ? ui.report.footer
-            : "Signal by EFESO · Uso interno · Pesquisa baseada em fontes públicas recuperadas nesta execução."}
-          <span className="sr-only">{slug}</span>
-        </footer>
-      </article>
-    </div>
-  );
-}
-
-function IdentityBlock({ briefing }: { briefing: CompanyBriefing }) {
-  const canonical = briefing.canonicalName;
-  const queried = briefing.queriedName;
-  const corp = briefing.corporateCountry;
-  const geo = briefing.researchGeography;
-  if (!canonical && !queried && !corp && !geo) return null;
-  return (
-    <dl className="mt-5 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-      {canonical ? (
-        <div>
-          <dt className="text-[11px] font-medium tracking-wide uppercase">Entidade analisada</dt>
-          <dd className="mt-0.5 font-medium text-foreground">{canonical}</dd>
-        </div>
-      ) : null}
-      {queried && queried !== canonical ? (
-        <div>
-          <dt className="text-[11px] font-medium tracking-wide uppercase">Consulta do usuário</dt>
-          <dd className="mt-0.5 text-foreground">{queried}</dd>
-        </div>
-      ) : null}
-      {corp ? (
-        <div>
-          <dt className="text-[11px] font-medium tracking-wide uppercase">País / domicílio da entidade</dt>
-          <dd className="mt-0.5 text-foreground">{corp}</dd>
-        </div>
-      ) : null}
-      {geo ? (
-        <div>
-          <dt className="text-[11px] font-medium tracking-wide uppercase">Escopo da pesquisa</dt>
-          <dd className="mt-0.5 text-foreground">{geo}</dd>
-        </div>
-      ) : null}
-    </dl>
-  );
-}
-
-function ReportToc({ sections }: { sections: TocSection[] }) {
-  const [activeId, setActiveId] = useState(sections[0]?.id ?? "");
-
-  useEffect(() => {
-    const elements = sections
-      .map((section) => document.getElementById(`report-${section.id}`))
-      .filter((el): el is HTMLElement => Boolean(el));
-    if (elements.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActiveId(visible[0].target.id.replace("report-", ""));
-      },
-      { rootMargin: "-18% 0px -70% 0px", threshold: 0 },
-    );
-    elements.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [sections]);
-
-  return (
-    <nav aria-label={ui.report.contents} className="flex flex-col gap-0.5">
-      <div className="eyebrow mb-2 px-2">{ui.report.contents}</div>
-      {sections.map((section) => {
-        const active = section.id === activeId;
-        return (
-          <a
-            key={section.id}
-            href={`#report-${section.id}`}
-            aria-current={active ? "location" : undefined}
-            className={cn(
-              "flex items-baseline gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors outline-none",
-              "focus-visible:ring-2 focus-visible:ring-ring/40",
-              active ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <span className={cn("tabular w-5 shrink-0 text-[11px]", active ? "text-brand" : "text-muted-foreground/70")}>
-              {section.number}
-            </span>
-            <span className="truncate">{section.title}</span>
-          </a>
-        );
-      })}
-    </nav>
-  );
-}
-
-function Chapter({
-  id,
-  number,
-  title,
-  description,
-  children,
-}: {
-  id: string;
-  number: string;
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section id={`report-${id}`} className="scroll-mt-28">
-      <header className="mb-6 flex items-baseline gap-4 border-b border-border/70 pb-3">
-        <span className="tabular text-sm font-medium text-brand">{number}</span>
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
-          {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
-        </div>
-      </header>
-      {children}
+    <section id="report-fontes" className={styles.sources}>
+      <h2>Fontes e limitações</h2>
+      {accepted.length > 0 && <>
+        <p className={styles.note}>{accepted.length} {accepted.length === 1 ? "documento consultado" : "documentos consultados"} · {b.primarySourceCount} de origem primária</p>
+        <ol className={styles.sourceList}>{accepted.map((s, i) => <li key={s.id}>
+          <span aria-hidden>{String(i + 1).padStart(2, "0")}</span><div><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title || s.publisher || s.url} <ArrowUpRight size={13} aria-hidden /></a>
+          <p>{[s.publisher, s.published_at, sourceTypes[s.source_type], s.source_quality && qualities[s.source_quality]].filter(Boolean).join(" · ")}</p></div>
+        </li>)}</ol>
+      </>}
+      {material && <CopyList items={limitations} className={styles.note} />}
+      {!material && !compact && <span id="report-evidencias" />}
+      <details className={styles.disclosure}>
+        <summary>Identidade e detalhes da pesquisa</summary>
+        <dl className={styles.metadata}>
+          {[["Entidade analisada", b.canonicalName], ["Consulta original", b.queriedName], ["Domicílio", b.corporateCountry], ["Escopo", b.researchGeography]].filter(([, value]) => Boolean(value)).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+        </dl>
+        {b.phaseTimings.length > 0 && <p className={styles.note}>{b.phaseTimings.map(t => `${t.phase}: ${(t.ms / 1000).toFixed(1)}s`).join(" · ")}</p>}
+        {discarded.length > 0 && <details className={styles.disclosure}><summary>Fontes descartadas ({discarded.length})</summary>{discarded.map(s => <p key={s.id} className={styles.note}>{s.title || s.url}{s.rejection_reason ? ` · ${s.rejection_reason.replaceAll("_", " ")}` : ""}</p>)}</details>}
+      </details>
+      {history[0] && <Link href={routes.research(history[0].id)} className={styles.evidenceLink}>Ver detalhes da pesquisa <ArrowUpRight size={13} aria-hidden /></Link>}
     </section>
-  );
+    <footer className={styles.footer}>{preview ? "PREVIEW LOCAL · Dados, fontes, métricas, Fits e oportunidades fictícios. Exclusivo para revisão visual; não valida pesquisa real." : demoMode ? "Demonstração · Dados ilustrativos" : "SIGNAL by EFESO · Uso interno · Análise baseada em fontes públicas."}<span className="sr-only">{slug}</span></footer>
+  </article>;
 }
 
-function MetricTile({ label, value, note }: { label: string; value: string; note: string }) {
-  return (
-    <div className="bg-card px-4 py-4 sm:px-5">
-      <p className="eyebrow">{label}</p>
-      <p className="tabular mt-2 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{note}</p>
-    </div>
-  );
+function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
+  return <section id={id} className={styles.section}><h2>{title}</h2><div>{children}</div></section>;
 }
-
-function EmptyCopy({ text }: { text: string }) {
-  return <p className="max-w-[62ch] text-sm leading-relaxed text-muted-foreground">{text}</p>;
+function CopyList({ items, className }: { items: string[]; className?: string }) {
+  return items.length ? <div className={className}>{[...new Set(items)].map(text => <p key={text}>{text}</p>)}</div> : null;
 }
-
-function qualityRank(quality: string | null | undefined): number {
-  if (quality === "primary") return 0;
-  if (quality === "authoritative_secondary") return 1;
-  if (quality === "secondary") return 2;
-  return 3;
+function Evidence({ facts, sources }: { facts: ValidatedFactView[]; sources: ExternalSourceCandidateRow[] }) {
+  return <details id="report-evidencias" className={styles.disclosure}><summary>Ver evidências · {facts.length} fatos validados</summary><FactList facts={facts} sources={sources} /></details>;
 }
-
-function rejectionReasonLabel(reason: string): string {
-  switch (reason) {
-    case "ecommerce_noise":
-      return "página de e-commerce";
-    case "social_media":
-      return "rede social";
-    case "off_topic_company":
-      return "fora do escopo da empresa";
-    case "homepage_shell":
-      return "homepage genérica";
-    case "thin_content":
-      return "conteúdo insuficiente";
-    case "outside_horizon":
-      return "fora do horizonte temporal";
-    case "weak_source":
-      return "fonte fraca";
-    case "impostor_domain":
-      return "domínio impostor";
-    case "noise_url":
-      return "URL de baixo sinal";
-    default:
-      return reason.replaceAll("_", " ");
-  }
+function FactList({ facts, sources, compact = false }: { facts: ValidatedFactView[]; sources: ExternalSourceCandidateRow[]; compact?: boolean }) {
+  return <div className={styles.facts}>{facts.map(f => {
+    const source = sources.find(s => s.url === f.sourceUrl || s.canonical_url === f.sourceUrl);
+    return <div key={f.id} className={styles.fact}>
+      <p className={compact ? styles.factStatement : undefined}>{f.statement}</p>
+      <p className={styles.note}>{f.period} · {f.sourceLabel}</p>
+      <details className={styles.disclosure}><summary>Ver evidência original</summary>
+        {f.excerpt && <blockquote>{f.excerpt}</blockquote>}
+        <dl className={styles.metadata}>{[["Fonte", source?.title || f.sourceLabel], ["Editor", source?.publisher], ["Publicação", f.sourceDate], ["Tipo", source && sourceTypes[source.source_type]], ["Qualidade", source?.source_quality && qualities[source.source_quality]], ["Métrica", f.metric], ["Unidade", f.unit], ["Moeda", f.currency], ["Período", f.period], ["Validação", f.modality], ["Confiança", f.confidence !== null ? `${Math.round(f.confidence * 100)}%` : null]].filter(([, v]) => Boolean(v)).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+        {f.sourceUrl && <a className={styles.evidenceLink} href={f.sourceUrl} target="_blank" rel="noopener noreferrer">Abrir documento original <ArrowUpRight size={13} aria-hidden /></a>}
+        {f.sourceUrl && <p className="break-all text-xs text-muted-foreground">{f.sourceUrl}</p>}
+      </details>
+    </div>;
+  })}</div>;
 }

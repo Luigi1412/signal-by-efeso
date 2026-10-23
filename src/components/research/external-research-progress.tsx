@@ -87,11 +87,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
   const currentIndex = RESEARCH_PHASES.findIndex((phase) => phase.status === view.status);
   const done = view.status === "completed" || view.status === "partial";
   const failed = view.status === "failed" || view.status === "cancelled";
-  const progress = done
-    ? 1
-    : failed
-      ? Math.max(currentIndex, 0) / RESEARCH_PHASES.length
-      : Math.max(currentIndex, 0) / RESEARCH_PHASES.length;
+
 
   return (
     <div className="grid gap-10 lg:grid-cols-[1fr_280px] lg:gap-14">
@@ -114,15 +110,10 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
               : (view.memberProgress ?? ui.externalResearch.supporting)}
         </p>
 
-        <div
-          className="mt-5 h-1 overflow-hidden rounded-full bg-foreground/8"
-          role="progressbar"
-          aria-valuenow={Math.round(progress * 100)}
-        >
-          <div
-            className={cn("h-full rounded-full transition-[width] duration-150", done ? "bg-verified" : "bg-foreground")}
-            style={{ width: `${progress * 100}%` }}
-          />
+        <div className="mt-7 border-l-2 border-brand pl-5" role="status" aria-live="polite">
+          <p className="eyebrow">{done ? "Pesquisa concluída" : failed ? "Pesquisa interrompida" : "Agora"}</p>
+          <p className="mt-2 text-xl font-medium tracking-tight">{done ? "Resultado disponível" : failed ? "Consulte os detalhes abaixo" : currentIndex >= 0 ? PHASE_LABELS[RESEARCH_PHASES[currentIndex]!.labelKey] : view.status === "needs_user_resolution" ? "Confirme a empresa" : "Preparando pesquisa"}</p>
+          {!done && !failed && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Você pode navegar pelo SIGNAL. O progresso é atualizado enquanto esta página estiver aberta.</p>}
         </div>
 
         {view.status === "needs_user_resolution" ? (
@@ -202,10 +193,11 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
         ) : (
           <ol className="mt-8 flex flex-col">
             {RESEARCH_PHASES.map((phase, index) => {
+              if (!done && index > Math.max(currentIndex, 0) + 1) return null;
               const status = done || index < currentIndex ? "done" : index === currentIndex ? "active" : "pending";
               const detail = status === "active" || status === "done" ? phaseDetail(view, phase.status) : null;
               return (
-                <li key={phase.status} className="relative flex gap-4">
+                <li key={phase.status} aria-current={status === "active" ? "step" : undefined} className={cn("relative flex gap-4", status === "pending" && "text-muted-foreground")}>
                   <div className="flex flex-col items-center">
                     <span
                       className={cn(
@@ -216,14 +208,15 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
                       )}
                     >
                       {status === "done" ? <Check className="size-3" strokeWidth={2.5} /> : null}
-                      {status === "active" ? <span className="size-1.5 animate-pulse rounded-full bg-foreground" /> : null}
+                      {status === "active" ? <span className="size-1.5 rounded-full bg-foreground" /> : null}
                     </span>
                     {index < RESEARCH_PHASES.length - 1 ? (
                       <span className={cn("w-px flex-1", status === "done" ? "bg-foreground/40" : "bg-border")} />
                     ) : null}
                   </div>
-                  <div className={cn("pb-5", status === "pending" && "opacity-45")}>
-                    <div className="text-sm font-medium text-foreground">{PHASE_LABELS[phase.labelKey]}</div>
+                  <div className="pb-4">
+                    {status === "pending" && <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Em seguida</p>}
+                    <div className={cn("text-sm", status === "active" ? "font-semibold text-foreground" : "text-muted-foreground")}>{PHASE_LABELS[phase.labelKey]}</div>
                     {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
                     {status === "active" && phase.status === "generating_intelligence" ? (
                       <p className="mt-1 text-xs text-muted-foreground">{ui.externalResearch.evaluatingFit}</p>
@@ -285,9 +278,10 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
               <dd className="tabular font-semibold">{view.sourceCount}</dd>
             </div>
             <div className="flex justify-between py-3 text-sm">
-              <dt className="text-muted-foreground">{ui.externalResearch.processed}</dt>
+              <dt className="text-muted-foreground">Fontes retidas</dt>
               <dd className="tabular font-semibold">{view.acceptedCount}</dd>
             </div>
+            {(view.counts?.claims ?? 0) > 0 && <div className="flex justify-between py-3 text-sm"><dt className="text-muted-foreground">Fatos validados</dt><dd className="tabular font-semibold">{view.counts?.claims}</dd></div>}
             {view.rejectedCount > 0 ? (
               <div className="flex justify-between py-3 text-sm">
                 <dt className="text-muted-foreground">Descartadas</dt>

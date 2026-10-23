@@ -24,7 +24,7 @@ export function PageHeader({ title, description, eyebrow, actions, className, al
         <h1
           className={cn(
             "font-semibold tracking-tight text-foreground",
-            align === "center" ? "text-3xl sm:text-[34px] sm:leading-[1.15]" : "text-2xl",
+            align === "center" ? "text-3xl sm:text-[34px] sm:leading-[1.15]" : "text-3xl leading-tight sm:text-[36px] sm:tracking-[-0.04em]",
           )}
         >
           {title}
@@ -45,9 +45,9 @@ export function PageContainer({ children, className, width = "default" }: { chil
   return (
     <div
       className={cn(
-        "mx-auto w-full px-5 py-8 sm:px-8 lg:px-10 lg:py-10",
+        "mx-auto w-full px-5 py-10 sm:px-8 lg:px-12 lg:py-14",
         width === "narrow" && "max-w-3xl",
-        width === "default" && "max-w-6xl",
+        width === "default" && "max-w-[1280px]",
         width === "wide" && "max-w-[1400px]",
         className,
       )}

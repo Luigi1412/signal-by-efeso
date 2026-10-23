@@ -28,8 +28,8 @@ export function Brand({ size = "sm", href = routes.companies, className }: Brand
         />
       </span>
       <span className="flex flex-col leading-none">
-        <span className={cn("font-semibold tracking-tight text-foreground", size === "lg" ? "text-xl" : "text-[15px]")}>
-          {ui.brand.product}
+        <span className={cn("font-semibold tracking-tight text-foreground", size === "lg" ? "text-xl" : "text-[18px]")}>
+          {ui.brand.product.toUpperCase()}
         </span>
         <span
           className={cn(

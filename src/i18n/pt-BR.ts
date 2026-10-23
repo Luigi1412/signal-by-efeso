@@ -308,8 +308,8 @@ export const ptBR = {
   },
   newAnalysis: {
     title: "Nova pesquisa",
-    headline: "Pesquisar empresa",
-    description: "Pesquise qualquer empresa a partir do nome. O website e o país ajudam quando a identidade não for clara.",
+    headline: "Qual empresa você quer entender?",
+    description: "Movimentos relevantes, fatos verificáveis e possíveis implicações para a operação.",
     companyName: "Empresa",
     companyNameHint: "Informe o nome como você o conhece. Confirmaremos a identidade antes de pesquisar.",
     companyNameError: "Informe o nome de uma empresa para começar.",
@@ -322,7 +322,7 @@ export const ptBR = {
     instructions: "Instruções adicionais",
     instructionsPlaceholder: "Priorizar movimentos recentes ligados a operações e supply chain.",
     hint: "O nome já é suficiente. Website e país são opcionais.",
-    cta: "Pesquisar empresa",
+    cta: "Pesquisar",
   },
   resolve: {
     title: "Confirmar empresa",

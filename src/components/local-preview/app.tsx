@@ -63,7 +63,7 @@ export function LocalPreviewApp({ path, phase }: { path: string[]; phase?: strin
   } else if (route === "companies" && scenarioSlugs.includes(path[1] as ScenarioSlug)) {
     content = <>
       <CompanyWorkspaceHeader company={scenario.company} outcomeLabel={scenario.briefing.outcomeTitle} statusLabel="Concluída · cenário ilustrativo" researchGeography="Brasil" corporateCountry="Brasil" lastResearchedAtLabel="01/10/2026 · fixture" />
-      <div className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 lg:px-10"><CompanyReport slug={slug} briefing={scenario.briefing} sources={scenario.sources} history={[scenario.run]} /></div>
+      <div className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 lg:px-10"><CompanyReport slug={slug} briefing={scenario.briefing} sources={scenario.sources} history={[scenario.run]} signalFactIds={scenario.signalFactIds} /></div>
     </>;
   } else if (route === "research" && path[1] === "new") {
     content = <ResolutionPreview />;
@@ -99,13 +99,13 @@ export function LocalPreviewApp({ path, phase }: { path: string[]; phase?: strin
   }
 
   return <LocalPreviewProvider actions={session.actions}>
-    <div className="sticky top-0 z-40 border-b bg-hypothesis-muted px-4 py-3 text-sm" role="note" aria-label="Aviso de preview local">
+    <div className="border-b bg-hypothesis-muted px-5 py-2 text-xs" role="note" aria-label="Aviso de preview local">
       <strong>PREVIEW LOCAL</strong> · Todos os dados são fictícios. Sem login, banco, pesquisa, modelo ou validação de qualidade real.
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+      <details className="mt-1"><summary className="w-fit cursor-pointer text-xs">Navegar pelos cenários ilustrativos</summary><div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
         {reportLinks.map(item => <Link key={item.slug} href={`/companies/${item.slug}`} className="underline">{item.label}</Link>)}
         <Link href="/research/preview-local-horizonte-industrial" className="underline">Progresso ilustrativo</Link>
         <Link href="/admin" className="underline">Admin ilustrativo</Link>
-      </div>
+      </div></details>
     </div>
     <AppShell user={previewUser} showAdminNav={route === "admin"}>{content}</AppShell>
   </LocalPreviewProvider>;

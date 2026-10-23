@@ -8,9 +8,9 @@ export function AccountDetails({ rows }: { rows: { label: string; value: string 
       <PageHeader title={ui.accountPage.title} description={ui.accountPage.description} className="mb-8" />
       <dl className="divide-y border-y">
         {rows.map((row) => (
-          <div key={row.label} className="flex flex-col gap-1 py-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
+          <div key={row.label} className="flex flex-col gap-1 py-5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
             <dt className="text-sm text-muted-foreground">{row.label}</dt>
-            <dd className="text-sm font-medium text-foreground sm:text-right">{row.value}</dd>
+            <dd className="break-words text-sm font-medium text-foreground sm:max-w-[65%] sm:text-right">{row.value}</dd>
           </div>
         ))}
       </dl>

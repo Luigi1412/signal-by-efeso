@@ -8,6 +8,7 @@ import { assertEfesoAccess } from "@/server/access/require-efeso-access";
 import { listResearchRunsForCompany, listSourceCandidates, listWorkspaceCompanies } from "@/server/external-research/persistence";
 import { workspaceStaticParams } from "@/lib/workspace";
 import { isExplicitDemoContent } from "@/lib/supabase/env";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 
 export function generateStaticParams() {
@@ -21,6 +22,7 @@ export default async function CompanyOverviewPage({ params }: PageProps<"/compan
   let briefing = null;
   let persistenceError = false;
   let sources: Awaited<ReturnType<typeof listSourceCandidates>> = [];
+  const signalFactIds: Record<string, string[]> = {};
   let history: Awaited<ReturnType<typeof listResearchRunsForCompany>> = [];
 
   try {
@@ -28,6 +30,16 @@ export default async function CompanyOverviewPage({ params }: PageProps<"/compan
     if (!workspace) notFound();
     briefing = await getCompanyBriefing(slug);
     const access = await assertEfesoAccess();
+    // Presentation only: one session-bound read of existing links, with unchanged RLS.
+    if (briefing?.outcome === "signal_found" && briefing.signals.length > 0) {
+      const visibleFactIds = new Set(briefing.validatedFacts.map(fact => fact.id));
+      const client = await createServerSupabaseClient();
+      const { data } = await client.from("signal_claims").select("signal_id,claim_id")
+        .eq("workspace_id", access.workspaceId).in("signal_id", briefing.signals.map(signal => signal.id));
+      for (const link of data ?? []) {
+        if (visibleFactIds.has(link.claim_id)) (signalFactIds[link.signal_id] ??= []).push(link.claim_id);
+      }
+    }
     const companies = await listWorkspaceCompanies(access.workspaceId);
     const company = companies.find((item) => item.slug === slug);
     if (company) {
@@ -54,6 +66,7 @@ export default async function CompanyOverviewPage({ params }: PageProps<"/compan
       sources={sources}
       history={history}
       demoMode={isExplicitDemoContent()}
+      signalFactIds={signalFactIds}
     />
   );
 }

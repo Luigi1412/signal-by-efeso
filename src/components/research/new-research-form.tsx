@@ -2,11 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { ui } from "@/i18n";
 import { routes } from "@/lib/routes";
 import {
@@ -49,7 +48,6 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
   const [companyName, setCompanyName] = useState(initialCompanyName);
   const [website, setWebsite] = useState("");
   const [country, setCountry] = useState("");
-  const [instructions, setInstructions] = useState("");
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewOk | null>(null);
@@ -91,7 +89,6 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
         existingSlug: extra.existingSlug,
         selectedDomain: domain,
         confirmUnresolved: true,
-        instructions: instructions.trim() || undefined,
       });
       if (!result.ok) {
         setError(result.error);
@@ -108,19 +105,19 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
           <Label htmlFor="company-name">
             {ui.newAnalysis.companyName} <span className="text-brand">*</span>
           </Label>
-          <Input
+          <div className="relative"><Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" aria-hidden /><Input
             id="company-name"
             value={companyName}
             onChange={(e) => {
               setCompanyName(e.target.value);
               setPreview(null);
             }}
-            placeholder="Klabin"
+            placeholder="Pesquise pelo nome da empresa…"
             autoComplete="off"
             aria-invalid={touched && !isValid}
-            className="h-10 text-base md:text-[15px]"
+            className="h-16 rounded-lg border-border bg-card pl-12 text-base shadow-none md:text-lg"
             autoFocus
-          />
+          /></div>
           {touched && !isValid ? (
             <p className="text-xs text-conflict">{ui.newAnalysis.companyNameError}</p>
           ) : (
@@ -128,7 +125,7 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
           )}
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-2">
+        <details className="group"><summary className="w-fit cursor-pointer text-sm text-muted-foreground">Opções avançadas</summary><div className="mt-5 grid gap-6 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label htmlFor="company-website">
               {ui.newAnalysis.website}{" "}
@@ -166,32 +163,19 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
           </div>
         </div>
 
-        <div className="grid gap-2">
-          <Label htmlFor="instructions">
-            {ui.newAnalysis.instructions}{" "}
-            <span className="font-normal text-muted-foreground">{ui.newAnalysis.optional}</span>
-          </Label>
-          <Textarea
-            id="instructions"
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            placeholder={ui.newAnalysis.instructionsPlaceholder}
-            rows={3}
-            className="min-h-20 resize-y"
-          />
-        </div>
+        </details>
 
         <div className="flex flex-col-reverse items-start justify-between gap-4 sm:flex-row sm:items-center">
           <p className={`text-xs ${error ? "text-conflict" : "text-muted-foreground"}`}>{error ?? ui.newAnalysis.hint}</p>
-          <Button type="submit" variant="brand" size="lg" className="h-10 px-4" disabled={pending}>
-            {ui.newAnalysis.cta}
+          <Button type="submit" variant="brand" size="lg" className="h-12 px-7" disabled={pending}>
+            {pending ? "Identificando empresa…" : ui.newAnalysis.cta}
             <ArrowRight data-icon="inline-end" />
           </Button>
         </div>
       </form>
 
       {preview?.kind === "existing" ? (
-        <div className="border-t pt-6">
+        <div className="border-t border-brand/25 pt-6" role="status" aria-live="polite">
           <p className="text-sm font-medium">{ui.companyReport.confirmCompany}</p>
           <p className="mt-2 text-base font-semibold">{preview.name}</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -214,7 +198,7 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
       ) : null}
 
       {preview?.kind === "resolved" ? (
-        <div className="border-t pt-6">
+        <div className="border-t border-brand/25 pt-6" role="status" aria-live="polite">
           <p className="text-sm font-medium">{ui.companyReport.confirmCompany}</p>
           <p className="mt-2 text-base font-semibold">{preview.name}</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -233,7 +217,7 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
       ) : null}
 
       {preview?.kind === "ambiguous" ? (
-        <div className="border-t pt-6">
+        <div className="border-t border-brand/25 pt-6" role="status" aria-live="polite">
           <p className="text-sm font-medium">{ui.companyReport.ambiguousTitle}</p>
           <ul className="mt-4 divide-y border-y">
             {preview.candidates.map((candidate) => (
@@ -259,7 +243,7 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
       ) : null}
 
       {preview?.kind === "unresolved" ? (
-        <div className="border-t pt-6">
+        <div className="border-t border-brand/25 pt-6" role="status" aria-live="polite">
           <p className="text-sm text-muted-foreground">{ui.companyReport.unresolvedWarning}</p>
           {preview.suggestions.length > 0 ? (
             <ul className="mt-4 divide-y border-y">

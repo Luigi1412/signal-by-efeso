@@ -20,8 +20,6 @@ export function CompanyWorkspaceHeader({
   company,
   analysis,
   lastResearchedAtLabel,
-  outcomeLabel,
-  statusLabel,
   researchGeography,
   corporateCountry,
   demoMode = false,
@@ -32,7 +30,7 @@ export function CompanyWorkspaceHeader({
     .join(" · ");
 
   return (
-    <div className="border-b bg-card print:hidden">
+    <div className="border-b border-border/60 print:hidden">
       <div className="mx-auto w-full max-w-6xl px-5 pt-5 sm:px-8 lg:px-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CompanyBreadcrumb slug={company.slug} companyName={company.name} />
@@ -41,7 +39,7 @@ export function CompanyWorkspaceHeader({
 
         <div className="mt-4 flex flex-col gap-4 pb-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">{company.name}</h1>
+            <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-[38px] text-foreground">{company.name}</h1>
             {meta ? <p className="mt-1 text-sm text-muted-foreground">{meta}</p> : null}
             {researchGeography ? (
               <p className="mt-1 text-sm text-muted-foreground">
@@ -56,16 +54,6 @@ export function CompanyWorkspaceHeader({
               ) : analysis?.updatedAtLabel ? (
                 <span>
                   {ui.workspace.updated}: <span className="font-medium text-foreground">{analysis.updatedAtLabel}</span>
-                </span>
-              ) : null}
-              {outcomeLabel ? (
-                <span>
-                  Resultado: <span className="font-medium text-foreground">{outcomeLabel}</span>
-                </span>
-              ) : null}
-              {statusLabel ? (
-                <span>
-                  Status: <span className="font-medium text-foreground">{statusLabel}</span>
                 </span>
               ) : null}
             </div>
