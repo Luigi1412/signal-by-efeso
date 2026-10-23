@@ -28,7 +28,7 @@ INSERT INTO auth.users (
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
     'authenticated',
     'authenticated',
-    'storage-user-a@signal.test',
+    'storage-user-a@efeso.com',
     crypt('test-password', gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
@@ -41,7 +41,7 @@ INSERT INTO auth.users (
     'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4',
     'authenticated',
     'authenticated',
-    'storage-user-b@signal.test',
+    'storage-user-b@efeso.com',
     crypt('test-password', gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
@@ -90,6 +90,13 @@ VALUES
   );
 
 -- Anon may have table SELECT privilege, but no policy grants source-files rows.
+-- Explicit authorization fixture (membership alone must no longer bypass allowlist).
+INSERT INTO public.workspace_authorized_emails(workspace_id,email,role,status)
+SELECT m.workspace_id,lower(u.email),m.role,'active'
+FROM public.workspace_memberships m JOIN auth.users u ON u.id=m.user_id
+WHERE split_part(lower(u.email),'@',2)='efeso.com'
+ON CONFLICT(workspace_id,email) DO UPDATE SET role=EXCLUDED.role,status='active';
+
 SET LOCAL ROLE anon;
 SELECT is(
   (SELECT count(*)::int FROM storage.objects WHERE bucket_id = 'source-files'),

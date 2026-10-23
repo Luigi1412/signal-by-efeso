@@ -1,10 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { SIGNAL_PRODUCT_VERSION } from "../src/lib/product-version";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+for(const path of [".env.local",".env"]) if(existsSync(resolve(root,path))) loadEnvFile(resolve(root,path));
 let failed = false;
 
 function fail(message: string) {
@@ -44,6 +46,7 @@ const requiredEnv = [
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
   "ALLOWED_EMAIL_DOMAINS",
+  "TAVILY_API_KEY",
 ];
 
 for (const key of requiredEnv) {
@@ -52,9 +55,9 @@ for (const key of requiredEnv) {
 }
 
 const lmProvider = (process.env.LANGUAGE_MODEL_PROVIDER ?? "ollama").trim().toLowerCase();
-if (lmProvider === "ollama") ok("LANGUAGE_MODEL_PROVIDER=ollama");
-else if (lmProvider === "openai") ok("LANGUAGE_MODEL_PROVIDER=openai");
-else console.log("SKIP  LANGUAGE_MODEL_PROVIDER is not ollama/openai");
+if (lmProvider === "ollama" && process.env.OLLAMA_EXTRACTION_MODEL?.trim()) ok("Ollama extraction model configured");
+else if (lmProvider === "openai" && process.env.OPENAI_API_KEY?.trim()) ok("OpenAI provider configured");
+else fail("EXTERNAL BLOCKER: language model configuration missing");
 
 if (process.env.OPENAI_API_KEY?.trim()) {
   console.log("SKIP  OPENAI_API_KEY present — optional / not funded");
@@ -65,20 +68,19 @@ if (process.env.OPENAI_API_KEY?.trim()) {
 const researchProvider = (process.env.EXTERNAL_RESEARCH_PROVIDER ?? "none").trim().toLowerCase();
 if (researchProvider === "tavily") {
   if (process.env.TAVILY_API_KEY?.trim()) ok("EXTERNAL_RESEARCH_PROVIDER=tavily");
-  else console.log("SKIP  TAVILY_API_KEY missing — REAL EXTERNAL RESEARCH: PENDING CONFIGURATION");
-} else if (researchProvider === "http") ok("EXTERNAL_RESEARCH_PROVIDER=http");
-else console.log("SKIP  EXTERNAL_RESEARCH_PROVIDER is not a real provider");
+  else fail("EXTERNAL BLOCKER: TAVILY_API_KEY missing");
+} else fail("EXTERNAL BLOCKER: EXTERNAL_RESEARCH_PROVIDER must be tavily");
 
 const workerEnabled = (process.env.RESEARCH_WORKER_ENABLED ?? "true").trim().toLowerCase() !== "false";
 if (workerEnabled) ok("research worker enabled (npm run worker:research)");
-else console.log("SKIP  RESEARCH_WORKER_ENABLED=false");
+else fail("research worker disabled");
 
 const packPath = resolve(root, "data/efeso-knowledge/efeso-knowledge-pack.v1.json");
 if (existsSync(packPath)) {
   const pack = JSON.parse(readFileSync(packPath, "utf8")) as { objects?: unknown[] };
   const count = Array.isArray(pack.objects) ? pack.objects.length : 0;
-  if (count > 0) ok(`knowledge pack present (${count} objects)`);
-  else fail("knowledge pack has zero objects");
+  if (count === 195) ok(`knowledge pack preserved (${count} objects)`);
+  else fail(`knowledge pack expected 195 objects, found ${count}`);
 } else {
   fail("knowledge pack missing");
 }
@@ -113,25 +115,22 @@ const workerScript = resolve(root, "scripts/research-worker.ts");
 if (existsSync(workerScript)) ok("research worker script present");
 else fail("research worker script missing");
 
-run("TypeScript", "npx", ["tsc", "--noEmit"]);
-run("ESLint", "npx", ["eslint", "src", "scripts", "--max-warnings=0"]);
-run("critical unit tests", "npx", [
-  "tsx",
-  "--test",
-  "src/server/access/*.test.ts",
-  "src/server/relationship/*.test.ts",
-  "src/server/recommended-actions/*.test.ts",
-  "src/server/external-research/*.test.ts",
-  "src/server/product/*.test.ts",
-  "src/server/knowledge/governance.test.ts",
-]);
-
-if (existsSync(resolve(root, "supabase/tests/demo_consistency.sql"))) {
-  run("demo consistency", "npx", ["supabase", "test", "db", "--local", "supabase/tests/demo_consistency.sql"]);
-  run("product integrity", "npx", ["supabase", "test", "db", "--local", "supabase/tests/product_integrity.sql"]);
+run("route types",process.execPath,["node_modules/next/dist/bin/next","typegen"]);
+run("TypeScript", process.execPath, ["node_modules/typescript/bin/tsc", "--noEmit"]);
+run("ESLint", process.execPath, ["node_modules/eslint/bin/eslint.js", "src", "scripts", "--max-warnings=0"]);
+const tests = readdirSync(resolve(root,"src"),{recursive:true}).filter((file)=>typeof file==="string"&&file.endsWith(".test.ts")).map(file=>`src/${file}`);
+run("all deterministic unit tests",process.execPath,["--import","tsx","--test",...tests]);
+run("local PostgreSQL migrations/RLS/ownership",process.execPath,["tests/local-db.mjs"]);
+const docker=spawnSync("docker",["info","--format","{{.ServerVersion}}"],{encoding:"utf8",timeout:5000});
+if(docker.status===0){
+  for (const file of readdirSync(resolve(root,"supabase/tests")).filter(file=>file.endsWith(".sql") && (demoMode==="true" || file!=="demo_consistency.sql")).sort()) {
+    run(`Supabase ${file}`, "npx", ["supabase", "test", "db", "--local", `supabase/tests/${file}`]);
+  }
+} else {
+  fail("EXTERNAL BLOCKER: Supabase pgTAP/live integration unavailable (Docker/local Supabase required)");
 }
 
-run("Next.js build", "npm", ["run", "build"]);
+if(run("Next.js build", "npm", ["run", "build"])) run("production HTTP smoke",process.execPath,["tests/http-smoke.mjs"]);
 
 if (failed) {
   console.error("\nrelease:check failed");

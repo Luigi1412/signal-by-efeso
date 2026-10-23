@@ -1,4 +1,5 @@
 import "server-only";
+import { createPipelineAdminClient } from "@/lib/supabase/pipeline-admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isDemoMode, isSupabaseConfigured } from "@/lib/supabase/env";
 import { getAllowedEmailDomains } from "@/server/access/email-domains";
@@ -81,8 +82,8 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
     {
       id: "auth",
       labelKey: "auth",
-      status: authConfigured ? "ok" : "missing",
-      detail: authConfigured ? "healthy" : "Variáveis públicas do Supabase ausentes",
+      status: authConfigured ? "pending" : "missing",
+      detail: authConfigured ? "Configurado; login real precisa ser validado" : "Variáveis públicas do Supabase ausentes",
     },
     {
       id: "domain",
@@ -126,20 +127,20 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
     {
       id: "externalResearch",
       labelKey: "externalResearch",
-      status: tavilyReady ? "ok" : "missing",
-      detail: tavilyReady ? "healthy" : "Provedor de pesquisa externa não configurado",
+      status: tavilyReady ? "pending" : "missing",
+      detail: tavilyReady ? "Configurado; validação de pesquisa real pendente" : "Provedor de pesquisa externa não configurado",
     },
     {
       id: "tavily",
       labelKey: "tavily",
-      status: tavilyReady ? "ok" : "missing",
-      detail: tavilyReady ? "healthy" : "Tavily não configurado",
+      status: tavilyReady ? "pending" : "missing",
+      detail: tavilyReady ? "Configurado; validação de pesquisa real pendente" : "Tavily não configurado",
     },
     {
       id: "researchWorker",
       labelKey: "researchWorker",
-      status: workerEnabled ? "ok" : "pending",
-      detail: workerEnabled ? "npm run worker:research habilitado" : "RESEARCH_WORKER_ENABLED=false",
+      status: "pending",
+      detail: workerEnabled ? "Worker configurado; aguardando heartbeat real" : "RESEARCH_WORKER_ENABLED=false",
     },
     {
       id: "knowledgePack",
@@ -194,7 +195,13 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
   try {
     const supabase = await createServerSupabaseClient();
     checks.splice(2, 0, { id: "db", labelKey: "db", status: "ok", detail: "healthy" });
-    checks.push({ id: "rls", labelKey: "rls", status: "ok", detail: "políticas ativas (ver testes RLS)" });
+    const rpc = createPipelineAdminClient() as unknown as {rpc:(name:string)=>Promise<{data:{rls:boolean;allowlist_enforced:boolean;ownership:boolean;fencing:boolean;worker_alive:boolean;real_knowledge:number}|null;error:unknown}>};
+    const integrity=await rpc.rpc("signal_release_integrity");
+    const proof=integrity.error?null:integrity.data;
+    checks.push({id:"rls",labelKey:"rls",status:proof?.rls&&proof.allowlist_enforced?"ok":"failed",detail:proof?.rls&&proof.allowlist_enforced?"RLS e revogação por allowlist presentes; aceitação pgTAP/browser separada":"Integridade de autorização não comprovada"});
+    const worker=checks.find(check=>check.id==="researchWorker");
+    if(worker){worker.status=proof?.worker_alive?"ok":"pending";worker.detail=proof?.worker_alive?"Heartbeat recente do processo worker":"Nenhum heartbeat recente do worker";}
+
 
     const { data: companies, error: companyError } = await supabase
       .from("companies")
@@ -218,8 +225,8 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
     checks.push({
       id: "migrations",
       labelKey: "migrations",
-      status: schemaError ? "failed" : "ok",
-      detail: schemaError ? "Esquema incompleto" : "Esquema V1 presente",
+      status: schemaError || !proof?.ownership || !proof?.fencing ? "failed" : "ok",
+      detail: schemaError || !proof?.ownership || !proof?.fencing ? "Migrations de execução/proteção incompletas" : "Esquema, ownership e fencing presentes",
     });
 
     const { count: knowledgeCount } = await supabase
@@ -229,8 +236,8 @@ export async function getReleaseHealth(): Promise<ReleaseHealthSnapshot> {
     checks.push({
       id: "realKnowledge",
       labelKey: "realKnowledge",
-      status: (knowledgeCount ?? 0) > 0 ? "ok" : "missing",
-      detail: `${knowledgeCount ?? 0} objetos ativos`,
+      status: (proof?.real_knowledge ?? 0) > 0 ? "ok" : "missing",
+      detail: `${proof?.real_knowledge ?? 0} objetos reais ativos (${knowledgeCount ?? 0} acessíveis na sessão)`,
     });
 
     let latestResearchDetail = "Nenhuma pesquisa concluída neste ambiente";

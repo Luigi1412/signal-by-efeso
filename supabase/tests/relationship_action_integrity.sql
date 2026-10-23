@@ -13,14 +13,14 @@ INSERT INTO auth.users (
   (
     '00000000-0000-0000-0000-000000000000',
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa31',
-    'authenticated', 'authenticated', 'rel-admin@signal.test',
+    'authenticated', 'authenticated', 'rel-admin@efeso.com',
     crypt('test-password', gen_salt('bf')), now(),
     '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()
   ),
   (
     '00000000-0000-0000-0000-000000000000',
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa32',
-    'authenticated', 'authenticated', 'rel-member@signal.test',
+    'authenticated', 'authenticated', 'rel-member@efeso.com',
     crypt('test-password', gen_salt('bf')), now(),
     '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()
   );
@@ -47,6 +47,13 @@ INSERT INTO public.account_relationships (
   'a1000000-0000-4000-8000-00000000cccc',
   'active_client', 'strong', 'verified', 'demo_seed', 'active', '{"origin":"other_workspace"}'::jsonb
 );
+
+-- Explicit authorization fixture (membership alone must no longer bypass allowlist).
+INSERT INTO public.workspace_authorized_emails(workspace_id,email,role,status)
+SELECT m.workspace_id,lower(u.email),m.role,'active'
+FROM public.workspace_memberships m JOIN auth.users u ON u.id=m.user_id
+WHERE split_part(lower(u.email),'@',2)='efeso.com'
+ON CONFLICT(workspace_id,email) DO UPDATE SET role=EXCLUDED.role,status='active';
 
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa32', true);

@@ -175,6 +175,13 @@ SELECT set_config(
   )::text,
   true
 );
+-- Explicit authorization fixture (membership alone must no longer bypass allowlist).
+INSERT INTO public.workspace_authorized_emails(workspace_id,email,role,status)
+SELECT m.workspace_id,lower(u.email),m.role,'active'
+FROM public.workspace_memberships m JOIN auth.users u ON u.id=m.user_id
+WHERE split_part(lower(u.email),'@',2)='efeso.com'
+ON CONFLICT(workspace_id,email) DO UPDATE SET role=EXCLUDED.role,status='active';
+
 SET LOCAL ROLE authenticated;
 
 SELECT is((SELECT count(*)::int FROM public.companies), 0, 'unauthorized user cannot SELECT companies');

@@ -1,5 +1,5 @@
 /**
- * Generic-company research smoke: Klabin is NOT in the catalog seed.
+ * Klabin real-company regression: Klabin is in the assisted catalog.
  * Mirrors the member UI path: unresolved → confirm with website → research.
  *
  * npm run test:klabin-e2e
@@ -53,11 +53,10 @@ const STALL_MS = 10 * 60 * 1000;
 const TEST_CEILING_MS = 90 * 60 * 1000;
 
 async function main(): Promise<void> {
-  console.log("KLABIN E2E — generic company (not catalog-seeded)");
+  console.log("KLABIN E2E — real company catalog regression");
   const preview = resolveCompanyEntity({ query: "Klabin", country: "BR" });
-  if (preview.kind === "resolved") {
-    console.error("FAIL: Klabin unexpectedly auto-resolved; generic path broken.");
-    process.exit(1);
+  if (preview.kind !== "resolved" || preview.candidate.officialDomain !== "klabin.com.br") {
+    throw new Error("Klabin catalog regression failed");
   }
   console.log(`preview_kind=${preview.kind}`);
 

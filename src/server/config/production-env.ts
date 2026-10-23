@@ -13,6 +13,8 @@ const REQUIRED_PRODUCTION = [
   "TAVILY_API_KEY",
   "LANGUAGE_MODEL_PROVIDER",
   "OLLAMA_BASE_URL",
+  "OLLAMA_EXTRACTION_MODEL",
+  "EXTERNAL_RESEARCH_PROVIDER",
   "NEXT_PUBLIC_APP_URL",
 ] as const;
 
@@ -39,6 +41,8 @@ export function assertProductionEnv(): { ok: true } | { ok: false; missing: stri
   if ((process.env.RESEARCH_WORKER_ENABLED ?? "true").trim().toLowerCase() === "false") {
     missing.push("RESEARCH_WORKER_ENABLED should be true in production (or run worker separately with explicit ops acceptance)");
   }
+
+  if (process.env.EXTERNAL_RESEARCH_PROVIDER !== "tavily") missing.push("EXTERNAL_RESEARCH_PROVIDER must be tavily for public discovery");
 
   // DATABASE_URL is optional when Supabase URL is present
   if (!process.env.DATABASE_URL?.trim() && !process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()) {

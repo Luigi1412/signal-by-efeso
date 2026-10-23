@@ -1,0 +1,98 @@
+/** Isolated SQL/RLS checks on the PostgreSQL WASM test engine. No app or production DB changes. */
+import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
+import { PGlite } from "@electric-sql/pglite";
+import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
+const db=new PGlite({extensions:{pgcrypto}});
+await db.exec(`
+CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
+CREATE SCHEMA auth; CREATE SCHEMA storage;
+CREATE TABLE auth.users(id uuid PRIMARY KEY,email text, email_confirmed_at timestamptz,
+ instance_id uuid,aud text,role text,encrypted_password text,raw_app_meta_data jsonb,raw_user_meta_data jsonb,created_at timestamptz,updated_at timestamptz);
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$SELECT coalesce(nullif(current_setting('request.jwt.claim.role',true),''),current_user)$$;
+CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint);
+CREATE TABLE storage.objects(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),bucket_id text,name text,owner uuid,metadata jsonb DEFAULT '{}');
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+GRANT USAGE ON SCHEMA public,auth,storage TO anon,authenticated,service_role;
+GRANT SELECT ON auth.users TO service_role;
+GRANT ALL ON storage.objects,storage.buckets TO anon,authenticated,service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon,authenticated,service_role;
+`);
+let migrationCount=0;
+try {
+  for(const file of (await readdir(new URL('../supabase/migrations/',import.meta.url))).filter(f=>f.endsWith('.sql')).sort()) {
+    try {await db.exec(await readFile(new URL(`../supabase/migrations/${file}`,import.meta.url),'utf8'));migrationCount++;}
+    catch(error){throw new Error(`Migration ${file}: ${error.message}`);}
+  }
+  console.log(`PASS ${migrationCount} complete migrations on PostgreSQL`);
+  await db.exec(await readFile(new URL('../supabase/seed.sql',import.meta.url),'utf8'));
+  const workspace='0e8f0e50-b2a1-4c3d-9e7f-000000000001';
+  const member='10000000-0000-4000-8000-000000000001';
+  await db.query(`INSERT INTO auth.users(id,email,email_confirmed_at) VALUES($1,'sql-test@efeso.com',now())`,[member]);
+  await db.query(`INSERT INTO workspace_authorized_emails(workspace_id,email,role,status) VALUES($1,'sql-test@efeso.com','member','invited')`,[workspace]);
+  await db.exec(`SET ROLE service_role; SELECT set_config('request.jwt.claim.role','service_role',false)`);
+  const activate=await db.query(`SELECT * FROM activate_allowlisted_member($1,'SQL Test')`,[member]);
+  assert.equal(activate.rows.length,1);assert.equal(activate.rows[0].status,'active');
+  await db.exec(`RESET ROLE; SELECT set_config('request.jwt.claim.role','authenticated',false); SET ROLE authenticated`);
+  await db.query(`SELECT set_config('request.jwt.claim.sub',$1,false)`,[member]);
+  assert.equal((await db.query(`SELECT is_active_workspace_member($1) AS allowed`,[workspace])).rows[0].allowed,true);
+  assert.ok((await db.query(`SELECT * FROM companies`)).rows.length>0);
+  await db.exec(`RESET ROLE; UPDATE workspace_authorized_emails SET status='disabled' WHERE email='sql-test@efeso.com'; SET ROLE authenticated`);
+  assert.equal((await db.query(`SELECT is_active_workspace_member($1) AS allowed`,[workspace])).rows[0].allowed,false);
+  assert.equal((await db.query(`SELECT * FROM companies`)).rows.length,0);
+  console.log('PASS invited activation and immediate disabled revocation with unchanged JWT');
+  await db.exec(`RESET ROLE; SELECT set_config('request.jwt.claim.role','service_role',false); SET ROLE service_role`);
+  await assert.rejects(db.query(`SELECT * FROM activate_allowlisted_member($1,'Denied')`,[member]),/not authorized/);
+  await db.exec(`RESET ROLE; UPDATE workspace_authorized_emails SET status='active' WHERE email='sql-test@efeso.com'`);
+  const run='20000000-0000-4000-8000-000000000001';
+  const owner1='30000000-0000-4000-8000-000000000001',owner2='30000000-0000-4000-8000-000000000002';
+  await db.query(`INSERT INTO external_research_runs(id,workspace_id,requested_query,normalized_query,created_by) VALUES($1,$2,'SQL Test','sql test',$3)`,[run,workspace,member]);
+  await db.exec(`SET ROLE service_role`);
+  assert.equal((await db.query(`SELECT * FROM claim_research_execution($1,$2)`,[run,owner1])).rows.length,1);
+  assert.equal((await db.query(`SELECT * FROM claim_research_execution($1,$2)`,[run,owner2])).rows.length,0);
+  assert.equal((await db.query(`SELECT renew_research_execution($1,$2) AS ok`,[run,owner2])).rows[0].ok,false);
+  assert.equal((await db.query(`SELECT renew_research_execution($1,$2) AS ok`,[run,owner1])).rows[0].ok,true);
+  await db.query(`SELECT release_research_execution($1,$2)`,[run,owner1]);
+  assert.equal((await db.query(`SELECT * FROM claim_research_execution($1,$2)`,[run,owner2])).rows.length,1);
+  await db.query(`SELECT set_config('request.headers',$1,false)`,[JSON.stringify({'x-signal-run':run,'x-signal-owner':owner1})]);
+  await assert.rejects(db.query(`UPDATE external_research_runs SET requested_query='stale' WHERE id=$1`,[run]),/ownership lost/);
+  await db.query(`SELECT set_config('request.headers',$1,false)`,[JSON.stringify({'x-signal-run':run,'x-signal-owner':owner2})]);
+  await db.query(`UPDATE external_research_runs SET requested_query='owner verified' WHERE id=$1`,[run]);
+  await db.query(`SELECT set_config('request.headers','{}',false)`);
+  const otherRun='20000000-0000-4000-8000-000000000002';
+  await db.query(`INSERT INTO external_research_runs(id,workspace_id,requested_query,normalized_query,created_by) VALUES($1,$2,'Other','other',$3)`,[otherRun,workspace,member]);
+  assert.equal((await db.query(`SELECT * FROM claim_research_execution($1,$2)`,[otherRun,owner1])).rows.length,0);
+  await db.query(`UPDATE external_research_runs SET status='cancelled' WHERE id=$1`,[run]);
+  assert.equal((await db.query(`SELECT renew_research_execution($1,$2) AS ok`,[run,owner2])).rows[0].ok,false);
+  await db.query(`SELECT release_research_execution($1,$2)`,[run,owner1]);
+  assert.equal((await db.query(`SELECT owner FROM research_execution_slot`)).rows[0].owner,owner2);
+  console.log('PASS exclusive/global claim, stale-write fencing, ownership token, renewal, immediate next phase and cancellation');
+  await db.exec(`RESET ROLE; SELECT set_config('request.jwt.claim.role','postgres',false)`);
+  await db.exec(await readFile(new URL('../supabase/seed_demo.sql',import.meta.url),'utf8'));
+  const snapshot=(await db.query(`SELECT id,source_id FROM source_snapshots LIMIT 1`)).rows[0];
+  assert.ok(snapshot);
+  await db.query(`UPDATE sources SET access_type='public',source_type='news' WHERE id=$1`,[snapshot.source_id]);
+  await db.exec(`SELECT set_config('request.jwt.claim.role','authenticated',false); SET ROLE authenticated`);
+  assert.equal((await db.query(`SELECT id FROM source_snapshots WHERE id=$1`,[snapshot.id])).rows.length,1);
+  await db.exec(`RESET ROLE`);
+  await db.query(`UPDATE sources SET access_type='restricted' WHERE id=$1`,[snapshot.source_id]);
+  await db.exec(`SET ROLE authenticated`);
+  assert.equal((await db.query(`SELECT id FROM sources WHERE id=$1`,[snapshot.source_id])).rows.length,0);
+  assert.equal((await db.query(`SELECT id FROM source_snapshots WHERE id=$1`,[snapshot.id])).rows.length,0);
+  assert.equal((await db.query(`SELECT id FROM evidence_fragments WHERE source_snapshot_id=$1`,[snapshot.id])).rows.length,0);
+  await db.exec(`RESET ROLE`);
+  console.log('PASS private research sources, snapshots and fragments cannot be read by members');
+  const fit = (await db.query(`SELECT id,knowledge_object_id FROM efeso_fits WHERE status='active' LIMIT 1`)).rows[0];
+  assert.ok(fit, 'privacy regression requires a real relational fit fixture');
+  await db.exec(`SELECT set_config('request.jwt.claim.role','authenticated',false); SET ROLE authenticated`);
+  assert.ok((await db.query(`SELECT * FROM efeso_fits WHERE id=$1`,[fit.id])).rows.length > 0);
+  await db.exec(`RESET ROLE`);
+  await db.query(`UPDATE efeso_knowledge_objects SET visibility_level='admin_only',confidentiality_level='confidential' WHERE id=$1`,[fit.knowledge_object_id]);
+  await db.exec(`SET ROLE authenticated`);
+  assert.equal((await db.query(`SELECT * FROM efeso_fits WHERE id=$1`,[fit.id])).rows.length,0);
+  assert.equal((await db.query(`SELECT * FROM efeso_fit_components WHERE efeso_fit_id=$1`,[fit.id])).rows.length,0);
+  assert.equal((await db.query(`SELECT * FROM opportunity_efeso_fits WHERE efeso_fit_id=$1`,[fit.id])).rows.length,0);
+  console.log('PASS restricted knowledge is absent from fit/component/opportunity payloads under authenticated RLS');
+  console.log('NOTE PostgreSQL WASM serializes connections: a multi-process live race and Supabase pgTAP remain separate acceptance checks.');
+} finally {await db.close();}

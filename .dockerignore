@@ -10,3 +10,8 @@ private/efeso-knowledge-sources
 coverage
 tmp
 *.log
+
+.env*
+!.env.example
+!.env.production.example
+!.env.development.example

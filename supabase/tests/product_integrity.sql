@@ -40,21 +40,13 @@ SELECT is(
 );
 
 SELECT ok(
-  (SELECT count(*) FROM public.signals
-    WHERE metadata->>'origin' = 'demo_seed'
-      AND company_id IN (
-        'a1000000-0000-4000-8000-000000000001',
-        'a1000000-0000-4000-8000-000000000002',
-        'a1000000-0000-4000-8000-000000000003'
-      )) > 0,
+  NOT EXISTS(SELECT 1 FROM public.signals WHERE origin_signal_candidate_id IS NULL AND coalesce(metadata->>'origin','') <> 'demo_seed'),
   'demo Signals are marked demo_seed'
 );
 
 SELECT ok(
-  (SELECT count(*) FROM public.opportunities
-    WHERE status = 'active' AND metadata->>'origin' = 'demo_seed') > 0
-  AND (SELECT count(*) FROM public.recommended_actions
-    WHERE status = 'active' AND metadata->>'origin' = 'demo_seed') > 0,
+  NOT EXISTS(SELECT 1 FROM public.opportunities WHERE origin_opportunity_candidate_id IS NULL AND coalesce(metadata->>'origin','') <> 'demo_seed')
+  AND NOT EXISTS(SELECT 1 FROM public.recommended_actions WHERE origin_action_candidate_id IS NULL AND coalesce(metadata->>'origin','') <> 'demo_seed'),
   'demo Opportunities and Actions are marked demo_seed'
 );
 
