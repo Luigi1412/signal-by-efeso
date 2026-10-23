@@ -1,4 +1,5 @@
 import "server-only";
+import { researchSignal } from "@/server/external-research/runtime";
 import {
   CLAIM_EXTRACTION_PROMPT_VERSION,
   CLAIM_EXTRACTION_SCHEMA_VERSION,
@@ -254,6 +255,7 @@ export async function executeControlledExtraction(input: {
           onAfterDecision: input.onAfterDecision,
         });
       } catch {
+        researchSignal()?.throwIfAborted();
         // Keep persisted candidates; remaining pending units resume on the next tick.
       }
     }
@@ -379,6 +381,7 @@ export async function executeControlledExtraction(input: {
           onBatchReport: input.onBatchReport,
         });
       } catch {
+        researchSignal()?.throwIfAborted();
         // Keep persisted candidates even if semantic validation of the window fails.
       }
     }
@@ -511,6 +514,7 @@ async function insertCandidateRow(
   fingerprint: string,
 ): Promise<ClaimCandidateRow> {
   const created = await insertClaimCandidate({
+    entityRelationship: input.draft.entityRelationship, operationalTheme: input.draft.operationalTheme,
     workspaceId: input.workspaceId,
     analysisId: input.analysisId,
     researchRunId: input.researchRunId,

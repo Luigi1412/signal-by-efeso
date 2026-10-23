@@ -4,7 +4,7 @@ import { decodeHtmlEntities } from "@/server/parsers/html-entities";
 import { SEMANTIC_VALIDATOR_CODES, type CandidateDraft } from "./validation-types";
 
 const FINANCIAL_FOCUS =
-  /EBITDA|Net revenue|Revenue reached|receita l[ií]quida|lucro l[ií]quido|R\$\s*\d|operating cash|capex|guidance/i;
+  /capacity|ramp.?up|production|produtiv|restructur|supply.?chain|acquisition|capex|guidance|EBITDA|receita l[ií]quida/i;
 
 export function focusTextForModel(text: string, maxChars = 3500): string {
   if (text.length <= maxChars) return text;
@@ -193,6 +193,8 @@ export function extractedClaimToDraft(claim: ExtractedClaim): CandidateDraft {
   };
   return {
     proposedStatement: claim.statement.trim(),
+    entityRelationship: claim.entity_relationship ?? "unresolved",
+    operationalTheme: claim.operational_theme ?? null,
     claimCategory: claim.claim_category,
     claimType: claim.claim_type,
     assertionMode: claim.assertion_mode,

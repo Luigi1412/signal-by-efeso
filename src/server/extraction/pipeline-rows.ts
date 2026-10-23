@@ -46,6 +46,7 @@ export interface ModelRunRow {
 }
 
 export interface ClaimCandidateRow {
+  entity_relationship?: string; operational_theme?: string | null;
   id: string;
   workspace_id: string;
   analysis_id: string;

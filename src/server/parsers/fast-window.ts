@@ -13,7 +13,7 @@ const RELEVANT =
 
 export function getFastPassWindowOptions(provider: string): FastPassWindowOptions {
   if (provider === "ollama") {
-    return { maxWindows: 1, maxCharsPerWindow: 4000, maxTotalChars: 4000 };
+    return { maxWindows: 2, maxCharsPerWindow: 4000, maxTotalChars: 8000 };
   }
   return { maxWindows: 4, maxCharsPerWindow: 3500, maxTotalChars: 14000 };
 }
@@ -58,7 +58,8 @@ function scoreBlock(block: ParsedContentBlock): number {
   const text = block.textContent;
   let score = 0;
   if (RELEVANT.test(text)) score += 4;
-  if (/\d/.test(text)) score += 2;
+  if (/\d/.test(text)) score += 1;
+  if (/capacity|ramp.?up|production|produtiv|restructur|capex|supplier|supply.?chain|shutdown|acquisition|opera[cç]|capacidade|reestrutur|investimento/i.test(text)) score += 6;
   if (block.blockType === "table" || block.blockType === "list") score += 1;
   if (text.length > 80 && text.length < 2000) score += 1;
   return score;

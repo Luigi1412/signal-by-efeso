@@ -59,6 +59,8 @@ export const extractionCitationSchema = z.object({
 
 export const extractedClaimSchema = z.object({
   candidate_key: z.string(),
+  entity_relationship: z.enum(["company", "parent", "subsidiary", "brand", "unresolved"]).optional(),
+  operational_theme: z.string().nullable().optional(),
   statement: z.string(),
   claim_category: claimCategorySchema,
   claim_type: z.literal("fact"),

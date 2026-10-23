@@ -1,4 +1,8 @@
 import "server-only";
+import { discoverPublicIdentity, normalizeIdentityDomain } from "./public-identity";
+import { loadResearchAssessment } from "@/server/product/research-assessment";
+import { executeOwnedPhase } from "./execution";
+import { assertResearchOwned, researchSignal, countResearch } from "./runtime";
 import { isIntelligenceGenerationConfigured, getLanguageModelProviderName } from "@/server/ai/config";
 import { getLanguageModelProvider } from "@/server/ai/get-provider";
 import {
@@ -19,10 +23,11 @@ import { listClaimsForSignalExtraction, listEvidenceQuotesForClaims, listSignalC
 import { getExternalResearchLimits } from "./config";
 import { detectPotentialClaimConflicts } from "./conflicts";
 import { discoverCompanySources, selectAcceptedSources, selectInitialSources } from "./discover";
-import { inferHeadquartersFromDomain, resolveCompanyEntity, type ExistingCompanyRecord } from "./entity";
+import { resolveCompanyEntity, type ExistingCompanyRecord } from "./entity";
+import { classifySource } from "./tavily-map";
 import { UnsafeFetchError } from "./fetch-safe";
 import { isAggregatorHost } from "./aggregators";
-import { extractOfficialPdfLinks } from "./html";
+import { extractPublicationDate, extractOfficialPdfLinks } from "./html";
 import {
   attachSnapshotToLegacyRun,
   findReusableSnapshot,
@@ -130,18 +135,29 @@ export async function previewCompanyQuery(input: {
   query: string;
   country?: string | null;
   industry?: string | null;
+  selectedDomain?: string | null;
 }) {
   const query = sanitizePublicResearchQuery(input.query);
   const existing = await loadExisting(input.workspaceId);
-  return resolveCompanyEntity({
+  const local = resolveCompanyEntity({
     query,
     country: input.country,
     industry: input.industry,
     existing,
   });
+  if (local.kind !== "unresolved") return local;
+  const provider = createMemberExternalResearchProvider(input.selectedDomain ?? null);
+  if (!provider) return local;
+  try { return await discoverPublicIdentity({ query, provider, selectedDomain: input.selectedDomain }); }
+  catch { return local; }
 }
 
 export async function tickExternalCompanyResearch(workspaceId: string, runId: string): Promise<ExternalResearchRunRow> {
+  return executeOwnedPhase(workspaceId, runId, () => tickOwnedResearch(workspaceId, runId));
+}
+
+async function tickOwnedResearch(workspaceId: string, runId: string): Promise<ExternalResearchRunRow> {
+  await assertResearchOwned();
   const loaded = await getResearchRun(workspaceId, runId);
   if (!loaded) throw new Error("RUN_NOT_FOUND");
   if (isTerminalStatus(loaded.status) && loaded.status !== "needs_user_resolution") return loaded;
@@ -174,6 +190,7 @@ export async function tickExternalCompanyResearch(workspaceId: string, runId: st
         return run;
     }
   } catch (error) {
+    if (researchSignal()?.aborted) throw error;
     const code = failureCode(error);
     const detail = errorDetail(error);
     // Transient local-model failures after claims exist must not erase a recoverable run.
@@ -340,14 +357,7 @@ async function inferResumeStatus(run: ExternalResearchRunRow): Promise<ExternalR
 }
 
 function normalizeOfficialDomain(value: string | null | undefined): string {
-  if (!value) return "";
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/^www\./, "")
-    .split("/")[0]
-    ?.replace(/\/$/, "") ?? "";
+  return value?.trim() ? normalizeIdentityDomain(value.trim()) : "";
 }
 
 function manualCandidateFromRun(run: ExternalResearchRunRow, domain: string | null): EntityCandidate {
@@ -356,11 +366,13 @@ function manualCandidateFromRun(run: ExternalResearchRunRow, domain: string | nu
   return {
     canonicalName: run.requested_query.trim(),
     officialDomain,
-    headquartersCountry: inferHeadquartersFromDomain(officialDomain),
+    headquartersCountry: "",
+    entityKind: "company", relationshipToQuery: "unresolved",
+    publicIdentityEvidence: [],
     industry: run.requested_industry ?? "",
     aliases: run.requested_query.trim() ? [run.requested_query.trim()] : [],
     decisionBasis: domain
-      ? ["user-provided domain", "headquarters inferred from domain when known"]
+      ? ["user-provided domain", "corporate domicile not publicly confirmed"]
       : ["user-confirmed identity"],
     existingCompanyId: null,
     existingSlug: null,
@@ -383,6 +395,10 @@ async function phaseResolveEntity(run: ExternalResearchRunRow): Promise<External
     existing,
     selectedDomain,
   });
+  if (resolution.kind === "unresolved") {
+    const provider = createMemberExternalResearchProvider(selectedDomain);
+    if (provider) resolution = await discoverPublicIdentity({query:run.requested_query,provider,selectedDomain});
+  }
   if (selectedDomain && resolution.kind !== "resolved") {
     const pool = resolution.kind === "ambiguous" ? resolution.candidates : resolution.suggestions;
     const picked = pool.find((item) => normalizeOfficialDomain(item.officialDomain) === selectedDomain);
@@ -447,6 +463,7 @@ async function phaseResolveEntity(run: ExternalResearchRunRow): Promise<External
       corporateCountry: resolution.candidate.headquartersCountry,
       canonicalName: resolution.candidate.canonicalName,
       queriedName: run.requested_query,
+      entityConfirmed: Boolean(resolution.candidate.officialDomain) && (resolution.candidate.relationshipToQuery !== "unresolved" || userConfirmed || Boolean(selectedDomain)),
     },
   };
   const legacy = await insertLegacyResearchRun({
@@ -549,7 +566,11 @@ async function phaseDiscover(run: ExternalResearchRunRow): Promise<ExternalResea
 
 async function phaseReview(run: ExternalResearchRunRow): Promise<ExternalResearchRunRow> {
   if (run.accepted_source_count < 1) {
-    return fail(run, "NO_RELIABLE_SOURCES", "Não encontramos fontes públicas suficientemente confiáveis.");
+    if (run.analysis_id) await markAnalysisReady(run.workspace_id,run.analysis_id);
+    if (run.research_run_id) await completeLegacyResearchRun(run.workspace_id,run.research_run_id,false);
+    return (await transitionRun(run.workspace_id,run.id,"reviewing_sources",{status:"completed",completed_at:new Date().toISOString(),
+      failure_code:null,failure_reason:null,resolution_payload:{...run.resolution_payload,research_outcome:"insufficient_evidence",
+        limitations:["Não encontramos fontes públicas suficientemente confiáveis."],fit_state:"FIT_NOT_EVALUATED",execution_status:"completed"}})) ?? run;
   }
   return (await transitionRun(run.workspace_id, run.id, "reviewing_sources", { status: "ingesting_sources" })) ?? run;
 }
@@ -570,6 +591,7 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
     const canonical = row.canonical_url || row.url;
     const reused = await findReusableSnapshot(run.workspace_id, canonical);
     if (reused) {
+      countResearch("cacheHits");
       await attachSnapshotToLegacyRun({
         workspaceId: run.workspace_id,
         legacyResearchRunId: run.research_run_id,
@@ -584,7 +606,12 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
       return;
     }
     try {
+      await assertResearchOwned();
       const document = await provider.fetchDocument(row.url);
+      if (document.mimeType.includes("html")) {
+        const publishedAt=extractPublicationDate(new TextDecoder().decode(document.bytes));
+        if (publishedAt) {row={...row,published_at:publishedAt};await updateSourceCandidate(row.id,{published_at:publishedAt});}
+      }
       totalBytes += document.bytes.byteLength;
       const ingested = await ingestFetchedDocument({
         workspaceId: run.workspace_id,
@@ -611,6 +638,7 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
         }
       }
     } catch (error) {
+      if (researchSignal()?.aborted) throw error;
       const status = fetchStatus(error);
       await updateSourceCandidate(row.id, { status, rejection_reason: status === "unavailable" ? "unavailable" : "fetch_failed" });
       if (status === "unavailable") unavailable += 1;
@@ -648,7 +676,7 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
         normalizedUrl: normalizeUrl(url),
         title: `${candidate?.canonicalName ?? run.requested_query} — PDF oficial`,
         publisher: candidate?.canonicalName ?? "official",
-        sourceType: "earnings_release",
+        sourceType: classifySource(url, "", candidate?.officialDomain).sourceType,
         sourceTier: 1,
         sourceQuality: "primary",
         publishedAt: null as string | null,
@@ -800,9 +828,7 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
     })),
     provider,
     promote: (id: string) => promoteViaPipelineAdmin("promote_claim_candidate", id),
-    onAfterDecision: async () => {
-      await maybeGenerateFirstUsefulIntelligence(run);
-    },
+    onAfterDecision: async () => { await persistPartialCounts(run); },
     onBatchReport: async (report: { called: boolean; zodOk: boolean; fallbackReason: string | null; batchMs: number | null; fallbackCount: number; fallbackMs: number[]; candidateCount: number }) => {
       await insertResearchEvent({
         workspaceId: run.workspace_id,
@@ -819,10 +845,13 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
   for (const row of rows) {
     const snapshotText = await getSnapshotNormalizedText(row.snapshot_id as string);
     if (isLowYieldNormalizedText(snapshotText)) continue;
+    const previous = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+    const processed = Array.isArray(previous.resolution_payload.processed_snapshots) ? previous.resolution_payload.processed_snapshots as string[] : [];
     const existing = (await listCandidatesForSnapshot(row.snapshot_id as string)).filter(
       (candidate) => candidate.analysis_id === run.analysis_id,
     );
     const pending = existing.filter((candidate) => candidate.status === "pending_validation");
+    if (processed.includes(row.snapshot_id as string) && pending.length === 0) continue;
     if (existing.length > 0 && pending.length === 0) continue;
     if (existing.length === 0) {
       if (extracted >= extractLimit) continue;
@@ -833,19 +862,18 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
     try {
       await executeControlledExtraction(extractionArgs(row, blocks));
       extractionSucceeded = true;
+      const progress = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+      await updateResearchRun(run.workspace_id, run.id,{resolution_payload:{...progress.resolution_payload, processed_snapshots:[...new Set([...processed,row.snapshot_id])]}});
       await persistPartialCounts(run);
-      const promotedClaims = await listClaimsForSignalExtraction({
-        workspaceId: run.workspace_id,
-        companyId: run.resolved_company_id,
-        analysisId: run.analysis_id,
-      });
-      if (promotedClaims.length === 0) {
-        // Hollow/nav pages can "succeed" with zero promoted claims — keep trying richer snapshots.
-        continue;
-      }
-      await maybeGenerateFirstUsefulIntelligence(run);
-      break;
+      const assessment = await loadResearchAssessment((await getResearchRun(run.workspace_id, run.id)) ?? run);
+      const latest = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+      await updateResearchRun(run.workspace_id, run.id, {resolution_payload:{...latest.resolution_payload,
+        coverage:{sufficient:assessment.sufficient, themes:assessment.themes, gaps:assessment.gaps,
+          citedPrimarySources:assessment.primarySourceCount, recentMaterialClaims:assessment.recentMaterialClaimCount}}});
+      if (assessment.sufficient) break;
+
     } catch (error) {
+      if (researchSignal()?.aborted) throw error;
       extractionFailures += 1;
       await insertResearchEvent({
         workspaceId: run.workspace_id,
@@ -894,9 +922,13 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
 
 async function phaseSignals(run: ExternalResearchRunRow): Promise<ExternalResearchRunRow> {
   if (!run.analysis_id || !run.research_run_id || !run.resolved_company_id) throw new Error("PIPELINE_VALIDATION_FAILED");
-  await maybeGenerateFirstUsefulIntelligence(run);
   const latest = (await getResearchRun(run.workspace_id, run.id)) ?? run;
   const gate = await progressiveGate(latest);
+  const evidenceGate = await loadResearchAssessment(latest);
+  if (!gate.ok || evidenceGate.recentMaterialClaimCount === 0 || evidenceGate.preciseClaimCount < 2) {
+    await recordSignalOutcome(run,gate.claimHash,0);
+    return (await transitionRun(run.workspace_id,run.id,"generating_signals",{status:"generating_intelligence"})) ?? run;
+  }
   const existingSignals = await listSignalCandidatesForAnalysis(latest.analysis_id as string);
   const pendingSignals = existingSignals.filter((row) => row.status === "pending_validation");
   const optionalAbsenceReview = existingSignals.some(
@@ -953,6 +985,10 @@ async function phaseSignals(run: ExternalResearchRunRow): Promise<ExternalResear
 
 async function phaseIntelligence(run: ExternalResearchRunRow): Promise<ExternalResearchRunRow> {
   if (!run.analysis_id || !run.research_run_id || !run.resolved_company_id) throw new Error("PIPELINE_VALIDATION_FAILED");
+  if ((await loadResearchAssessment(run)).qualifiedSignalCount === 0) {
+    await updateResearchRun(run.workspace_id,run.id,{resolution_payload:{...run.resolution_payload,fit_state:"FIT_NOT_EVALUATED"}});
+    return (await transitionRun(run.workspace_id,run.id,"generating_intelligence",{status:"generating_opportunities"})) ?? run;
+  }
   const shared = {
     companyId: run.resolved_company_id,
     analysisId: run.analysis_id,
@@ -970,11 +1006,15 @@ async function phaseIntelligence(run: ExternalResearchRunRow): Promise<ExternalR
     if (!isSkipablePipelineGap(error)) throw error;
   }
   try {
-    await runEfesoFitForCompany({
+    const result = await runEfesoFitForCompany({
       ...shared,
       promote: (id) => promoteViaPipelineAdmin("promote_efeso_fit_candidate", id),
     });
+    const current = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+    await updateResearchRun(run.workspace_id, run.id, {resolution_payload:{...current.resolution_payload, fit_state: result.knowledgeCount === 0 ? "KNOWLEDGE_UNAVAILABLE" : result.promotedCount > 0 ? "FIT_FOUND" : "NO_RELEVANT_FIT"}});
   } catch (error) {
+    const current = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+    await updateResearchRun(run.workspace_id, run.id,{resolution_payload:{...current.resolution_payload,fit_state:errorDetail(error)==="SIGNALS_NOT_FOUND"?"FIT_NOT_EVALUATED":"KNOWLEDGE_UNAVAILABLE"}});
     if (!isSkipablePipelineGap(error)) throw error;
   }
   await persistPartialCounts(run);
@@ -983,8 +1023,12 @@ async function phaseIntelligence(run: ExternalResearchRunRow): Promise<ExternalR
 
 async function phaseOpportunities(run: ExternalResearchRunRow): Promise<ExternalResearchRunRow> {
   if (!run.analysis_id || !run.research_run_id || !run.resolved_company_id) throw new Error("PIPELINE_VALIDATION_FAILED");
+  if (run.resolution_payload.fit_state !== "FIT_FOUND") {
+    await updateResearchRun(run.workspace_id,run.id,{resolution_payload:{...run.resolution_payload,supported_opportunity_ids:[]}});
+    return (await transitionRun(run.workspace_id,run.id,"generating_opportunities",{status:"generating_actions"})) ?? run;
+  }
   try {
-    await runOpportunitiesForCompany({
+    const opportunityResult = await runOpportunitiesForCompany({
       companyId: run.resolved_company_id,
       analysisId: run.analysis_id,
       researchRunId: run.research_run_id,
@@ -993,6 +1037,8 @@ async function phaseOpportunities(run: ExternalResearchRunRow): Promise<External
       provider: getLanguageModelProvider(),
       promote: (id) => promoteViaPipelineAdmin("promote_opportunity_candidate", id),
     });
+    const current = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+    await updateResearchRun(run.workspace_id,run.id,{resolution_payload:{...current.resolution_payload,supported_opportunity_ids:opportunityResult.candidates.filter(candidate=>candidate.status === "promoted").map(candidate=>candidate.promotedId).filter(Boolean)}});
   } catch (error) {
     if (!isSkipablePipelineGap(error)) throw error;
     await insertResearchEvent({
@@ -1013,7 +1059,8 @@ async function phaseOpportunities(run: ExternalResearchRunRow): Promise<External
 async function phaseActions(run: ExternalResearchRunRow): Promise<ExternalResearchRunRow> {
   if (!run.analysis_id || !run.research_run_id || !run.resolved_company_id) throw new Error("PIPELINE_VALIDATION_FAILED");
   try {
-    await runRecommendedActionsForCompany({
+    const opportunityIds = run.resolution_payload.supported_opportunity_ids;
+    if (Array.isArray(opportunityIds) && opportunityIds.length > 0) await runRecommendedActionsForCompany({
       companyId: run.resolved_company_id,
       analysisId: run.analysis_id,
       researchRunId: run.research_run_id,
@@ -1045,7 +1092,9 @@ async function phaseActions(run: ExternalResearchRunRow): Promise<ExternalResear
       throw error;
     }
   }
-  const counts = await countPromotedPipeline(run.workspace_id, run.resolved_company_id, run.analysis_id);
+  const counts = await countPromotedPipeline((await getResearchRun(run.workspace_id, run.id)) ?? run);
+  const latestBeforeCompletion = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+  const assessment = await loadResearchAssessment(latestBeforeCompletion);
   const warnings = run.unavailable_source_count > 0;
   await updateCompanyLastResearched(run.workspace_id, run.resolved_company_id);
   await markAnalysisReady(run.workspace_id, run.analysis_id);
@@ -1056,8 +1105,9 @@ async function phaseActions(run: ExternalResearchRunRow): Promise<ExternalResear
     completed_at: new Date().toISOString(),
     failure_reason: warnings ? "Algumas fontes ficaram indisponíveis; a execução foi concluída com avisos." : null,
     resolution_payload: {
-      ...run.resolution_payload,
+      ...latestBeforeCompletion.resolution_payload,
       counts,
+      research_outcome: assessment.researchOutcome, quality_gate: assessment,
       execution_status: warnings ? "completed_with_warnings" : "completed",
       warnings: warnings ? ["unavailable_sources"] : [],
     },
@@ -1151,7 +1201,7 @@ async function ensureCompany(workspaceId: string, candidate: EntityCandidate): P
     : null;
   if (domainHit) return refreshIdentity(domainHit.id, domainHit.slug);
   let slug = candidate.officialDomain?.split(".")[0] || slugify(candidate.canonicalName);
-  if (companies.some((row) => row.slug === slug)) slug = `${slug}-${candidate.headquartersCountry.toLowerCase() || "x"}`;
+  if (companies.some((row) => row.slug === slug)) slug = `${slug}-${crypto.randomUUID().slice(0,8)}`;
   const created = await insertCompany({
     workspaceId,
     slug,
@@ -1175,6 +1225,10 @@ function serializeCandidate(candidate: EntityCandidate) {
     aliases: candidate.aliases,
     existingCompanyId: candidate.existingCompanyId,
     existingSlug: candidate.existingSlug,
+    entityKind: candidate.entityKind ?? "company",
+    relationshipToQuery: candidate.relationshipToQuery ?? "exact",
+    parent: candidate.parent ?? null, brands: candidate.brands ?? [], subsidiaries: candidate.subsidiaries ?? [],
+    publicIdentityEvidence: candidate.publicIdentityEvidence ?? [],
   };
 }
 
@@ -1189,6 +1243,12 @@ function candidateFromPayload(run: ExternalResearchRunRow): EntityCandidate | nu
     industry: String(row.industry ?? ""),
     aliases: Array.isArray(row.aliases) ? row.aliases.map(String) : [],
     decisionBasis: [],
+    entityKind: row.entityKind as EntityCandidate["entityKind"],
+    relationshipToQuery: row.relationshipToQuery as EntityCandidate["relationshipToQuery"],
+    parent: row.parent && typeof row.parent === "object" && "name" in row.parent ? {name:String(row.parent.name),domain:"domain" in row.parent && typeof row.parent.domain==="string" ? row.parent.domain:null}:null,
+    brands: Array.isArray(row.brands) ? row.brands.map(String) : [],
+    subsidiaries: Array.isArray(row.subsidiaries) ? row.subsidiaries.map(String) : [],
+    publicIdentityEvidence: Array.isArray(row.publicIdentityEvidence) ? row.publicIdentityEvidence.map(String) : [],
     existingCompanyId: typeof row.existingCompanyId === "string" ? row.existingCompanyId : null,
     existingSlug: typeof row.existingSlug === "string" ? row.existingSlug : null,
   };
@@ -1283,7 +1343,7 @@ function fetchStatus(error: unknown): "unavailable" | "failed" {
 async function persistPartialCounts(run: ExternalResearchRunRow): Promise<void> {
   if (!run.resolved_company_id || !run.analysis_id) return;
   const latest = (await getResearchRun(run.workspace_id, run.id)) ?? run;
-  const counts = await countPromotedPipeline(run.workspace_id, run.resolved_company_id, run.analysis_id);
+  const counts = await countPromotedPipeline((await getResearchRun(run.workspace_id, run.id)) ?? run);
   await updateResearchRun(run.workspace_id, run.id, {
     resolution_payload: { ...latest.resolution_payload, counts },
   });
@@ -1293,7 +1353,7 @@ async function persistHeartbeat(run: ExternalResearchRunRow): Promise<ExternalRe
   const latest = (await getResearchRun(run.workspace_id, run.id)) ?? run;
   const counts =
     latest.resolved_company_id && latest.analysis_id
-      ? await countPromotedPipeline(latest.workspace_id, latest.resolved_company_id, latest.analysis_id)
+      ? await countPromotedPipeline(latest)
       : latest.resolution_payload.counts;
   return updateResearchRun(latest.workspace_id, latest.id, {
     resolution_payload: {
@@ -1351,101 +1411,6 @@ async function recordSignalOutcome(run: ExternalResearchRunRow, claimHash: strin
   });
 }
 
-async function maybeGenerateFirstUsefulIntelligence(run: ExternalResearchRunRow): Promise<void> {
-  const latest = (await getResearchRun(run.workspace_id, run.id)) ?? run;
-  if (latest.resolution_payload.progressive_generation) return;
-  const gate = await progressiveGate(latest);
-  if (!gate.ok) return;
-  if (latest.resolution_payload.first_intelligence_claim_hash === gate.claimHash) return;
-  await updateResearchRun(latest.workspace_id, latest.id, {
-    resolution_payload: { ...latest.resolution_payload, progressive_generation: true },
-  });
-  try {
-    if (!latest.analysis_id || !latest.research_run_id || !latest.resolved_company_id) return;
-    let promotedSignals = 0;
-    try {
-      const summary = await executeSignalExtraction({
-        workspaceId: latest.workspace_id,
-        companyId: latest.resolved_company_id,
-        analysisId: latest.analysis_id,
-        researchRunId: latest.research_run_id,
-        provider: getLanguageModelProvider(),
-        usedFakeProvider: false,
-        promote: (id) => promoteViaPipelineAdmin("promote_signal_candidate", id),
-      });
-      promotedSignals = summary.promotedCount;
-    } catch (error) {
-      if (isRecoverableModelError(error)) {
-        await insertResearchEvent({
-          workspaceId: latest.workspace_id,
-          researchRunId: latest.id,
-          eventType: "pipeline_note",
-          payload: {
-            code: "MODEL_PROVIDER_TRANSIENT",
-            phase: "progressive_signal_extraction",
-            detail: error instanceof Error ? error.message.slice(0, 240) : "unknown",
-          },
-        });
-        return;
-      }
-      if (!isSkipablePipelineGap(error)) throw error;
-    }
-    await recordSignalOutcome(latest, gate.claimHash, promotedSignals);
-    if (promotedSignals < 1) return;
-    const shared = {
-      companyId: latest.resolved_company_id,
-      analysisId: latest.analysis_id,
-      researchRunId: latest.research_run_id,
-      workspaceId: latest.workspace_id,
-      pipelineActor: true as const,
-      provider: getLanguageModelProvider(),
-    };
-    try {
-      await runAccountIntelligenceForCompany({
-        ...shared,
-        promote: (id) => promoteViaPipelineAdmin("promote_account_intelligence_candidate", id),
-      });
-    } catch (error) {
-      if (!isSkipablePipelineGap(error)) throw error;
-    }
-    try {
-      await runEfesoFitForCompany({
-        ...shared,
-        promote: (id) => promoteViaPipelineAdmin("promote_efeso_fit_candidate", id),
-      });
-    } catch (error) {
-      if (!isSkipablePipelineGap(error)) throw error;
-    }
-    try {
-      await runOpportunitiesForCompany({
-        ...shared,
-        promote: (id) => promoteViaPipelineAdmin("promote_opportunity_candidate", id),
-      });
-    } catch (error) {
-      if (!isSkipablePipelineGap(error)) throw error;
-      await insertResearchEvent({
-        workspaceId: latest.workspace_id,
-        researchRunId: latest.id,
-        eventType: "pipeline_note",
-        payload: { code: "NO_SUPPORTED_OPPORTUNITY", message: "Nenhuma oportunidade suficientemente sustentada" },
-      });
-    }
-    try {
-      await runRecommendedActionsForCompany({
-        ...shared,
-        promote: (id) => promoteViaPipelineAdmin("promote_recommended_action_candidate", id),
-      });
-    } catch (error) {
-      if (error instanceof ModelProviderUnavailableError) throw error;
-      if (!isSkipablePipelineGap(error)) throw error;
-    }
-  } finally {
-    const after = (await getResearchRun(run.workspace_id, run.id)) ?? latest;
-    await updateResearchRun(run.workspace_id, run.id, {
-      resolution_payload: { ...after.resolution_payload, progressive_generation: false },
-    });
-  }
-}
 
 function isSkipablePipelineGap(error: unknown): boolean {
   const message = errorDetail(error);

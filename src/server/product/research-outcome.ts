@@ -18,6 +18,9 @@ export type ResearchOutcome = (typeof RESEARCH_OUTCOMES)[number];
 
 export function deriveCompanyResearchOutcome(input: {
   signalCount: number;
+  qualifiedSignalCount?: number;
+  preciseClaimCount?: number;
+  provenanceClaimCount?: number;
   activeClaimCount: number;
   failureCode?: string | null;
   runStatus?: string | null;
@@ -30,12 +33,13 @@ export function deriveCompanyResearchOutcome(input: {
 }): ResearchOutcome {
   const gate = evaluateResearchQualityGate({
     signalCount: input.signalCount,
+    qualifiedSignalCount: input.qualifiedSignalCount, preciseClaimCount: input.preciseClaimCount, provenanceClaimCount: input.provenanceClaimCount,
     activeClaimCount: input.activeClaimCount,
-    primarySourceCount: input.primarySourceCount ?? (input.activeClaimCount > 0 ? 1 : 0),
+    primarySourceCount: input.primarySourceCount ?? 0,
     secondaryOnlyClaimCount: input.secondaryOnlyClaimCount ?? 0,
     recentMaterialClaimCount:
-      input.recentMaterialClaimCount ?? (input.activeClaimCount > 0 ? input.activeClaimCount : 0),
-    entityConfirmed: input.entityConfirmed ?? true,
+      input.recentMaterialClaimCount ?? 0,
+    entityConfirmed: input.entityConfirmed ?? false,
     runStatus: input.runStatus,
     failureCode: input.failureCode,
     unavailableSourceCount: input.unavailableSourceCount,

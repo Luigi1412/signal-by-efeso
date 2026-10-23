@@ -180,7 +180,7 @@ test("4. revenue decline must not invent operational crisis", () => {
   assert.equal(decision.rejectionReasonCode, "unsupported_inference");
 });
 
-test("5. CEO resignation may be leadership_change without invented motive", () => {
+test("5. CEO resignation has correct type but a lone claim cannot promote a movement", () => {
   const records = runSignalDeterministicValidators(
     context({
       draft: draft({
@@ -200,7 +200,8 @@ test("5. CEO resignation may be leadership_change without invented motive", () =
     signalType: "leadership_change",
     validations: [...records, ...semantic],
   });
-  assert.equal(decision.status, "validated");
+  assert.equal(decision.status, "rejected");
+  assert.equal(decision.rejectionReasonCode, "primary_claim_present");
 });
 
 test("6. announced acquisition must not be marked completed", () => {
@@ -279,7 +280,8 @@ test("9. unresolved company must not auto-promote", () => {
     signalType: "strategic_plan",
     validations: records,
   });
-  assert.equal(decision.status, "needs_review");
+  assert.equal(decision.status, "rejected");
+  assert.notEqual(decision.status, "validated");
 });
 
 test("10. believes productivity may improve is not realized performance_improvement", () => {
@@ -333,8 +335,9 @@ test("12. same event in two sources is duplicate_semantics / fingerprint review"
         signalType: "new_facility",
         title: "Company to build new facility in São Paulo",
         coreEvent: "new plant sao paulo",
+        claims:[{claimId:"c1",relationshipType:"primary_evidence"},{claimId:"c2",relationshipType:"supporting_evidence"}],
       }),
-      claims: [claim({ id: "c1", statement: "Company to build new facility in São Paulo", assertionMode: "announced" })],
+      claims: [claim({ id: "c1", statement: "Company to build new facility in São Paulo", assertionMode: "announced" }),claim({id:"c2",statement:"The announced plant adds capacity in 2026.",assertionMode:"announced"})],
       existingFingerprints: [fingerprint],
     }),
   );
@@ -388,8 +391,8 @@ test("optional null geography/period warnings do not block promotion when ground
 test("type other requires review even with passing grounding", () => {
   const records = runSignalDeterministicValidators(
     context({
-      draft: draft({ signalType: "other" }),
-      claims: [claim({ id: "c1", statement: "Company announced something.", assertionMode: "announced" })],
+      draft: draft({ signalType: "other",claims:[{claimId:"c1",relationshipType:"primary_evidence"},{claimId:"c2",relationshipType:"supporting_evidence"}] }),
+      claims: [claim({ id: "c1", statement: "Company announced something.", assertionMode: "announced" }),claim({id:"c2",statement:"Company also specified a timing.",assertionMode:"announced"})],
     }),
   );
   const semantic = signalSemanticOutputToRecords(passSemantic(), "run-1");

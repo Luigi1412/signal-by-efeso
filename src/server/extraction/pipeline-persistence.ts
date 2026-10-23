@@ -153,6 +153,7 @@ export async function findCandidateByFingerprint(
 }
 
 export async function insertClaimCandidate(input: {
+  entityRelationship?: string; operationalTheme?: string | null;
   workspaceId: string;
   analysisId: string;
   researchRunId: string;
@@ -209,6 +210,7 @@ export async function insertClaimCandidate(input: {
       currency_code: input.currencyCode,
       scale: input.scale,
       model_extraction_confidence: input.modelExtractionConfidence,
+      entity_relationship: input.entityRelationship ?? "unresolved", operational_theme: input.operationalTheme ?? null,
       status: "pending_validation",
     })
     .select("*")

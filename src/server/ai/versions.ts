@@ -1,9 +1,9 @@
-export const CLAIM_EXTRACTION_PROMPT_VERSION = "claim-extraction-v1";
+export const CLAIM_EXTRACTION_PROMPT_VERSION = "claim-extraction-v2";
 export const CLAIM_EXTRACTION_SCHEMA_VERSION = "claim-extraction-schema-v1";
 export const CLAIM_VALIDATION_PROMPT_VERSION = "claim-semantic-validation-v1";
 export const CLAIM_VALIDATION_SCHEMA_VERSION = "claim-semantic-validation-schema-v1";
 
-export const DETERMINISTIC_VALIDATOR_VERSION = "deterministic-v1";
+export const DETERMINISTIC_VALIDATOR_VERSION = "deterministic-v2";
 export const SEMANTIC_VALIDATOR_VERSION = "semantic-v1";
 
 export const KNOWLEDGE_EXTRACTION_PROMPT_VERSION = "knowledge-extraction-v1";
@@ -13,7 +13,7 @@ export const KNOWLEDGE_VALIDATION_SCHEMA_VERSION = "knowledge-semantic-validatio
 export const KNOWLEDGE_DETERMINISTIC_VALIDATOR_VERSION = "knowledge-deterministic-v1";
 export const KNOWLEDGE_SEMANTIC_VALIDATOR_VERSION = "knowledge-semantic-v1";
 
-export const SIGNAL_EXTRACTION_PROMPT_VERSION = "signal-extraction-v1";
+export const SIGNAL_EXTRACTION_PROMPT_VERSION = "signal-extraction-v2";
 export const SIGNAL_EXTRACTION_SCHEMA_VERSION = "signal-extraction-schema-v1";
 export const SIGNAL_VALIDATION_PROMPT_VERSION = "signal-semantic-validation-v1";
 export const SIGNAL_VALIDATION_SCHEMA_VERSION = "signal-semantic-validation-schema-v1";
@@ -27,13 +27,13 @@ export const ACCOUNT_INTELLIGENCE_VALIDATION_SCHEMA_VERSION = "account-intellige
 export const ACCOUNT_INTELLIGENCE_DETERMINISTIC_VALIDATOR_VERSION = "account-intelligence-deterministic-v1";
 export const ACCOUNT_INTELLIGENCE_SEMANTIC_VALIDATOR_VERSION = "account-intelligence-semantic-v1";
 
-export const EFESO_FIT_VALIDATION_PROMPT_VERSION = "efeso-fit-semantic-validation-v1";
+export const EFESO_FIT_VALIDATION_PROMPT_VERSION = "efeso-fit-semantic-validation-v2";
 export const EFESO_FIT_VALIDATION_SCHEMA_VERSION = "efeso-fit-semantic-validation-schema-v1";
 export const EFESO_FIT_DETERMINISTIC_VALIDATOR_VERSION = "efeso-fit-deterministic-v1";
 export const EFESO_FIT_SEMANTIC_VALIDATOR_VERSION = "efeso-fit-semantic-v1";
 
-export const OPPORTUNITY_EXTRACTION_PROMPT_VERSION = "opportunity-extraction-v1";
-export const OPPORTUNITY_EXTRACTION_SCHEMA_VERSION = "opportunity-extraction-schema-v1";
+export const OPPORTUNITY_EXTRACTION_PROMPT_VERSION = "opportunity-extraction-v2";
+export const OPPORTUNITY_EXTRACTION_SCHEMA_VERSION = "opportunity-extraction-schema-v2";
 export const OPPORTUNITY_VALIDATION_PROMPT_VERSION = "opportunity-semantic-validation-v1";
 export const OPPORTUNITY_VALIDATION_SCHEMA_VERSION = "opportunity-semantic-validation-schema-v1";
 export const OPPORTUNITY_DETERMINISTIC_VALIDATOR_VERSION = "opportunity-deterministic-v1";

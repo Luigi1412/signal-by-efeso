@@ -9,7 +9,7 @@ import {
 test("facts_only when claims exist without signals", () => {
   const outcome = deriveCompanyResearchOutcome({
     signalCount: 0,
-    activeClaimCount: 3,
+    activeClaimCount: 3, entityConfirmed:true, primarySourceCount:1, recentMaterialClaimCount:2, preciseClaimCount:3, provenanceClaimCount:3,
     runStatus: "completed",
     insufficientEvidenceForSignal: true,
   });
@@ -25,7 +25,7 @@ test("signal_found member copy stays non-technical", () => {
 
 test("signal_found when active signals exist", () => {
   assert.equal(
-    deriveCompanyResearchOutcome({ signalCount: 1, activeClaimCount: 2, runStatus: "completed" }),
+    deriveCompanyResearchOutcome({ signalCount:1, qualifiedSignalCount:1,activeClaimCount:2,preciseClaimCount:2,provenanceClaimCount:2,entityConfirmed:true,primarySourceCount:1,recentMaterialClaimCount:2,runStatus:"completed" }),
     "signal_found",
   );
 });
@@ -33,7 +33,7 @@ test("signal_found when active signals exist", () => {
 test("signal_found wins on partial even with stale pipeline failure code", () => {
   assert.equal(
     deriveCompanyResearchOutcome({
-      signalCount: 2,
+      signalCount: 2,qualifiedSignalCount:2,preciseClaimCount:4,provenanceClaimCount:4,entityConfirmed:true,primarySourceCount:2,recentMaterialClaimCount:4,
       activeClaimCount: 4,
       runStatus: "partial",
       failureCode: "PIPELINE_VALIDATION_FAILED",

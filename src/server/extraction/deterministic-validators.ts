@@ -1,3 +1,4 @@
+import { ambiguousMetric } from "@/server/product/evidence-quality";
 import { locateExactQuote } from "./quote";
 import type { CandidateDraft, CitedBlock, ValidationRecord } from "./validation-types";
 import { DETERMINISTIC_VALIDATOR_VERSION } from "@/server/ai/versions";
@@ -56,6 +57,10 @@ export function runDeterministicValidators(input: {
   const { draft, blocksById } = input;
   const results: ValidationRecord[] = [];
 
+  const evidence = draft.citations.map(c => c.exactQuote).join(" ");
+  if (ambiguousMetric(draft.metricName, draft.proposedStatement, evidence)) {
+    results.push(record("metric_precision", "warn", "review", "Earnings is economically ambiguous: define net income, operating income, EBITDA or EPS from explicit source evidence."));
+  }
   results.push(schemaValidity(draft));
   results.push(citationExists(draft, blocksById));
   results.push(quoteIntegrity(draft, blocksById));

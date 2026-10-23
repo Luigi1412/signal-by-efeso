@@ -31,6 +31,10 @@ Rules:
 26. Return claims: [] if nothing is explicitly supported.
 27. If the blocks explicitly state financial figures such as revenue, EBITDA, net profit, volume or cash generation, extract each stated figure as its own claim with a verbatim citation.
 
+28. Output normalized statements and operational_theme in Brazilian Portuguese; keep exact_quote in its original language.
+29. Reject economically ambiguous earnings unless the source explicitly defines net income, operating profit, EBITDA or EPS.
+30. entity_relationship must reflect the explicitly mentioned company, parent, subsidiary or brand; use unresolved when unstated. Never assume all group facts are local subsidiary facts.
+31. Preserve dates, units, currency and periods. A generic earnings number with unclear meaning is not an acceptable fact.
 Cite block_id values exactly as provided.`;
 
 export { CLAIM_EXTRACTION_PROMPT_VERSION };

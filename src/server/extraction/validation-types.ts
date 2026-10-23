@@ -50,6 +50,8 @@ export interface ProposedCitation {
 }
 
 export interface CandidateDraft {
+  entityRelationship?: string;
+  operationalTheme?: string | null;
   proposedStatement: string;
   claimCategory: string;
   claimType: string;

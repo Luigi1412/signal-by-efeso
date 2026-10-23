@@ -22,7 +22,7 @@ test("single secondary claim without primary → insufficient_evidence", () => {
 test("warnings map to completed run status, not partial outcome", () => {
   const gate = evaluateResearchQualityGate({
     signalCount: 0,
-    activeClaimCount: 4,
+    activeClaimCount: 4, preciseClaimCount:4,provenanceClaimCount:4,
     primarySourceCount: 2,
     secondaryOnlyClaimCount: 0,
     recentMaterialClaimCount: 3,
@@ -40,7 +40,7 @@ test("deriveCompanyResearchOutcome keeps facts_only when primary evidence exists
   assert.equal(
     deriveCompanyResearchOutcome({
       signalCount: 0,
-      activeClaimCount: 3,
+      activeClaimCount: 3, preciseClaimCount:3,provenanceClaimCount:3,entityConfirmed:true,
       runStatus: "completed",
       insufficientEvidenceForSignal: true,
       primarySourceCount: 2,

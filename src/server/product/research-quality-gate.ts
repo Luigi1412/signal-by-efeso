@@ -4,6 +4,9 @@ export type ExecutionStatus = "running" | "completed" | "completed_with_warnings
 
 export interface ResearchQualityGateInput {
   signalCount: number;
+  qualifiedSignalCount?: number;
+  preciseClaimCount?: number;
+  provenanceClaimCount?: number;
   activeClaimCount: number;
   primarySourceCount: number;
   secondaryOnlyClaimCount: number;
@@ -47,7 +50,10 @@ export function evaluateResearchQualityGate(input: ResearchQualityGateInput): Re
     };
   }
 
-  if (input.signalCount > 0) {
+  if (!input.entityConfirmed) return { executionStatus: warnings ? "completed_with_warnings" : "completed", researchOutcome: "insufficient_evidence", publishFullReport: false, reasons: ["entity_unconfirmed"] };
+
+  if ((input.qualifiedSignalCount ?? 0) > 0 && (input.preciseClaimCount ?? 0) >= 2 &&
+      (input.provenanceClaimCount ?? 0) >= 2 && input.recentMaterialClaimCount > 0) {
     return {
       executionStatus: warnings ? "completed_with_warnings" : "completed",
       researchOutcome: "signal_found",
@@ -61,6 +67,7 @@ export function evaluateResearchQualityGate(input: ResearchQualityGateInput): Re
   }
 
   const weakBase =
+    (input.preciseClaimCount ?? 0) === 0 || (input.provenanceClaimCount ?? 0) === 0 ||
     input.activeClaimCount === 0 ||
     (input.activeClaimCount <= 2 && input.primarySourceCount === 0) ||
     (input.activeClaimCount === 1 && input.secondaryOnlyClaimCount >= 1 && input.primarySourceCount === 0) ||

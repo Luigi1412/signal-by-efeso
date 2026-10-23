@@ -29,6 +29,13 @@ Rules:
 16. schema_version must be "${SIGNAL_EXTRACTION_SCHEMA_VERSION}".
 17. Return signals: [] if nothing is explicitly supported.
 
-Cite claim_id values exactly as provided.`;
+Cite claim_id values exactly as provided.
+Additional publication requirements:
+- Statements and analysis must be in Brazilian Portuguese; citations remain verbatim.
+- A headline or isolated financial number is not a material movement.
+- Link at least two factual claims establishing a specific event/change and its scale or timing.
+- Do not infer operational problems or EFESO opportunities from revenue alone.
+- Prefer signals:[] when the supplied claims do not establish a material change.
+`;
 
 export { SIGNAL_EXTRACTION_PROMPT_VERSION };

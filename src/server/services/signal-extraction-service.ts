@@ -1,4 +1,7 @@
 import "server-only";
+import { researchRuntime } from "@/server/external-research/runtime";
+import { getResearchRun as getExternalRun } from "@/server/external-research/persistence";
+import { loadResearchAssessment } from "@/server/product/research-assessment";
 import {
   SIGNAL_EXTRACTION_PROMPT_VERSION,
   SIGNAL_EXTRACTION_SCHEMA_VERSION,
@@ -531,6 +534,16 @@ async function validateAndMaybePromoteSignal(input: {
     allValidations = [...deterministic];
   }
 
+  const runtime=researchRuntime.getStore();
+  if(runtime){
+    const external=await getExternalRun(input.workspaceId,runtime.runId);
+    const assessment=external?await loadResearchAssessment(external,{id:input.candidate.id,type:String(input.draft.signalType),claimIds:input.draft.claims.filter(link=>link.relationshipType!=="contextual_evidence").map(link=>link.claimId)}):null;
+    if(!assessment?.qualifiedSignalIds.includes(input.candidate.id)) {
+      const quality:ValidationRecord={validatorCode:"cited_evidence_quality",validatorVersion:"evidence-v2",validatorType:"deterministic",result:"fail",severity:"blocking",message:"Signal lacks sufficiently precise, recent, material and authoritative cited evidence.",details:{}};
+      await insertSignalValidations({workspaceId:input.workspaceId,candidateId:input.candidate.id,records:[quality]});
+      allValidations.push(quality);
+    }
+  }
   if (!hasBlockingSignalFailure(allValidations)) {
     const cited = input.draft.claims
       .map((link) => claimsById.get(link.claimId))

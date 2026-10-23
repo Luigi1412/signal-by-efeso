@@ -32,8 +32,8 @@ test("fast pass prefers numeric/financial blocks and keeps full quotes", () => {
   assert.equal(kept?.textContent, quote);
 });
 
-test("ollama fast pass uses a single short window", () => {
+test("ollama coverage is bounded to two short windows", () => {
   const options = getFastPassWindowOptions("ollama");
-  assert.equal(options.maxWindows, 1);
-  assert.ok(options.maxTotalChars <= 4000);
+  assert.equal(options.maxWindows, 2);
+  assert.ok(options.maxTotalChars <= 8000);
 });

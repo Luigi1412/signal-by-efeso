@@ -94,6 +94,8 @@ function claimExists(input: SignalDeterministicContext): ValidationRecord {
 }
 
 function primaryClaimPresent(input: SignalDeterministicContext): ValidationRecord {
+  const supporting = new Set(input.draft.claims.filter(link => link.relationshipType !== "contextual_evidence").map(link => link.claimId));
+  if (supporting.size < 2) return record("primary_claim_present", "fail", "blocking", "Material Signals require at least two reinforcing factual claims.");
   const primary = input.draft.claims.filter((link) => link.relationshipType === "primary_evidence");
   if (primary.length === 0) {
     return record("primary_claim_present", "fail", "blocking", "Active Signals require a primary Claim.");
