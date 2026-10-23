@@ -1,4 +1,5 @@
 import "server-only";
+import { memberSafeKnowledge } from "@/server/knowledge/member-safety";
 import { requireAuthUserId } from "@/server/session";
 import * as workspaceRepository from "@/server/repositories/workspace-repository";
 import { PersistenceUnavailableError } from "@/server/persistence-error";
@@ -14,6 +15,7 @@ import {
   listActiveEfesoFitsForCompany,
   listActiveEfesoFitsForWorkspace,
   listEfesoFitComponents,
+  listEfesoFitValidations,
   listSignalKnowledgeMatchesForCompany,
   type AccountIntelligenceRow,
 } from "@/server/intelligence/persistence";
@@ -100,6 +102,8 @@ export async function getCompanyEfesoFit(companyId: string): Promise<EfesoFitVie
   const company = companies.find((row) => row.id === companyId);
   const views: EfesoFitView[] = [];
   for (const fit of fits) {
+    const knowledge = await getKnowledgeObject(workspace.id, fit.knowledge_object_id);
+    if (!knowledge || !memberSafeKnowledge(knowledge)) continue;
     views.push(await hydrateFit(workspace.id, fit, company?.display_name ?? companyId, company?.slug ?? ""));
   }
   const rank = (level: string) => (level === "high" ? 0 : level === "medium" ? 1 : 2);
@@ -121,7 +125,7 @@ export async function getCompanyFitHeatmap(): Promise<{
     listActiveEfesoFitsForWorkspace(workspace.id),
   ]);
   const offerings = objects
-    .filter((object) => isOfferingObjectType(object.object_type) && object.status === "active")
+    .filter((object) => memberSafeKnowledge(object) && isOfferingObjectType(object.object_type) && object.status === "active")
     .sort((a, b) => {
       const rank = (type: string) => (type === "capability" ? 0 : type === "service" ? 1 : 2);
       return rank(a.object_type) - rank(b.object_type) || a.canonical_name.localeCompare(b.canonical_name);
@@ -299,6 +303,8 @@ async function hydrateFit(
     listSignalKnowledgeMatchesForCompany(workspaceId, fit.knowledge_object_id),
   ]);
   const target = await loadKnowledgeFitTarget(workspaceId, fit.knowledge_object_id);
+  const chainRow = fit.origin_candidate_id ? (await listEfesoFitValidations(fit.origin_candidate_id)).find(row=>row.validator_code === "operational_chain" && row.result === "pass") : null;
+  const operationalChain = chainRow?.details as unknown as import("@/server/intelligence/fit-chain").FitOperationalChain | null;
   const relatedSignals: EfesoFitView["relatedSignals"] = [];
   for (const match of matches) {
     const signal = await getSignal(workspaceId, match.signal_id);
@@ -321,7 +327,8 @@ async function hydrateFit(
     status: fit.status,
     fitLevel: fit.fit_level,
     fitScore: fit.fit_score,
-    fitReasonSummary: fit.fit_reason_summary,
+    operationalChain,
+    fitReasonSummary: operationalChain?.fitRationale ?? fit.fit_reason_summary,
     version: fit.version,
     originModelRunId: fit.origin_model_run_id,
     demoOrigin: isDemoOrigin(fit.metadata),

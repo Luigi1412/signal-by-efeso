@@ -9,6 +9,13 @@ export const efesoFitValidatorResultSchema = z.object({
 
 export const efesoFitValidationOutputSchema = z.object({
   schema_version: z.literal(EFESO_FIT_VALIDATION_SCHEMA_VERSION),
+  movement: z.string().nullable().optional(),
+  operational_implication:z.string().nullable().optional(),
+  possible_need:z.string().nullable().optional(),
+  fit_rationale:z.string().nullable().optional(),
+  uncertainty:z.string().nullable().optional(),
+  client_validation:z.string().nullable().optional(),
+  supporting_signal_ids:z.array(z.string()).optional(),
   suggested_fit_level: z.enum(FIT_LEVELS).nullable(),
   validators: z.object({
     case_relevance: efesoFitValidatorResultSchema,

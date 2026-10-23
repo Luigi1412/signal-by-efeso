@@ -27,6 +27,11 @@ Title rules:
 
 Summary must cover: what happened; what need may emerge; which EFESO capability is relevant; which evidence supports the hypothesis; the main uncertainty.
 
+Write normalized analysis in Brazilian Portuguese. Cite existing signal/claim identifiers in the observed fact.
+operational_implication must explain why the specific movement could create the inferred_need.
+client_validation must name the concrete unknown that must be checked before claiming a client need.
+next_step must be a proportionate analytical validation step, not sales outreach.
+Return null for these fields when unsupported. Zero promoted opportunities is acceptable; do not fill gaps with generic consulting language.
 schema_version must be "${OPPORTUNITY_EXTRACTION_SCHEMA_VERSION}".`;
 
 export { OPPORTUNITY_EXTRACTION_PROMPT_VERSION };

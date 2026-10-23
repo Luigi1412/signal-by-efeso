@@ -83,6 +83,7 @@ export const OPPORTUNITY_KNOWLEDGE_RELATIONSHIPS = [
 export type OpportunityKnowledgeRelationship = (typeof OPPORTUNITY_KNOWLEDGE_RELATIONSHIPS)[number];
 
 export const OPPORTUNITY_RATIONALE_TYPES = [
+  "operational_implication", "potential_need", "client_validation", "next_step",
   "signal_trigger",
   "account_context",
   "efeso_relevance",

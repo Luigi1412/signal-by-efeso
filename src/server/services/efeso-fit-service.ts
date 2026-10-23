@@ -1,4 +1,7 @@
 import "server-only";
+import { validatedFitChain } from "@/server/intelligence/fit-chain";
+import { loadMatchingCatalog } from "@/server/knowledge/matching-catalog";
+import { countResearch } from "@/server/external-research/runtime";
 import {
   EFESO_FIT_VALIDATION_PROMPT_VERSION,
   EFESO_FIT_VALIDATION_SCHEMA_VERSION,
@@ -36,15 +39,11 @@ import {
 } from "@/server/intelligence/persistence";
 import { decideEfesoFitCandidateStatus } from "@/server/intelligence/promotion-policy";
 import { efesoFitSemanticOutputToRecords, passingEfesoFitValidation } from "@/server/intelligence/semantic-validators";
-import { isOfferingObjectType } from "@/server/intelligence/taxonomy";
 import { deriveAccountThemes } from "@/server/intelligence/themes";
 import type { EfesoFitCandidateView, EfesoFitSummary, FitComponentDraft, KnowledgeFitTarget } from "@/server/intelligence/types";
 import type { FitComponentType } from "@/server/intelligence/taxonomy";
 import {
-  getKnowledgeObject,
   listActiveKnowledgeObjects,
-  listObjectRelations,
-  listObjectTags,
 } from "@/server/knowledge/persistence";
 import { getCompanyRow, getSnapshotForRun, listCompaniesForWorkspace } from "@/server/signals/persistence";
 
@@ -72,47 +71,8 @@ export function createLabFakeFitProvider(count: number): FakeLanguageModelProvid
   return new FakeLanguageModelProvider(items);
 }
 
-function nestedTag(row: {
-  tag_id: string;
-  knowledge_tags: { category: string; canonical_name: string } | { category: string; canonical_name: string }[] | null;
-}): { tagId: string; category: string; canonicalName: string } | null {
-  const nested = Array.isArray(row.knowledge_tags) ? row.knowledge_tags[0] : row.knowledge_tags;
-  if (!nested) return null;
-  return { tagId: row.tag_id, category: nested.category, canonicalName: nested.canonical_name };
-}
-
 export async function loadKnowledgeFitTarget(workspaceId: string, objectId: string): Promise<KnowledgeFitTarget | null> {
-  const object = await getKnowledgeObject(workspaceId, objectId);
-  if (!object) return null;
-  const [tags, relations] = await Promise.all([listObjectTags(object.id), listObjectRelations(object.id)]);
-  const relatedIds = relations.map((row) => (row.source_object_id === object.id ? row.target_object_id : row.source_object_id));
-  const related: KnowledgeFitTarget["relatedObjects"] = [];
-  for (const relatedId of relatedIds) {
-    const relatedObject = await getKnowledgeObject(workspaceId, relatedId);
-    if (!relatedObject) continue;
-    const relation = relations.find((row) => row.source_object_id === relatedId || row.target_object_id === relatedId);
-    related.push({
-      id: relatedObject.id,
-      objectType: relatedObject.object_type,
-      canonicalName: relatedObject.canonical_name,
-      relationType: relation?.relation_type ?? "related_to",
-    });
-  }
-  return {
-    id: object.id,
-    objectType: object.object_type,
-    canonicalName: object.canonical_name,
-    status: object.status,
-    shortDescription: object.short_description,
-    tags: tags.map(nestedTag).filter((row): row is NonNullable<typeof row> => Boolean(row)),
-    relatedObjects: related,
-    visibilityLevel: object.visibility_level ?? "efeso_member",
-    confidentialityLevel: object.confidentiality_level ?? "internal",
-    knowledgeNature: object.knowledge_nature ?? "institutional_fact",
-    outcomeStatus: object.outcome_status ?? "not_applicable",
-    approvedForMatching: object.approved_for_matching ?? true,
-    origin: typeof object.metadata?.origin === "string" ? object.metadata.origin : null,
-  };
+  return (await loadMatchingCatalog(workspaceId)).find(object => object.id === objectId) ?? null;
 }
 
 export async function runEfesoFitForCompany(input: {
@@ -155,33 +115,18 @@ export async function runEfesoFitForCompany(input: {
   if (!snapshot) throw new Error("SOURCE_SNAPSHOT_NOT_FOUND");
 
   const themes = deriveAccountThemes(signals);
-  const objects = await listActiveKnowledgeObjects(workspace.id);
-  const hasRealKnowledge = objects.some(
-    (object) => object.status === "active" && (object.metadata as { origin?: string } | null)?.origin !== "demo_seed",
-  );
-  const matchingObjects = objects.filter((object) => {
-    if (object.status !== "active") return false;
-    if (object.approved_for_matching === false) return false;
-    if (hasRealKnowledge && (object.metadata as { origin?: string } | null)?.origin === "demo_seed") return false;
-    return true;
-  });
+  const objects = await loadMatchingCatalog(workspace.id);
   const usedFake = Boolean(input.useFakeProvider) && !input.provider;
-  const provider = input.provider ?? (usedFake ? createLabFakeFitProvider(matchingObjects.length) : getLanguageModelProvider());
-
-  for (const object of matchingObjects) {
-    const target = await loadKnowledgeFitTarget(workspace.id, object.id);
-    if (!target) continue;
-    const derivation = deriveEfesoFit({
-      companyId: company.id,
-      companyIndustry: company.industry,
-      companyCountry: company.primary_country_code,
-      signals,
-      themes,
-      knowledge: target,
-    });
-    if (derivation.fitScore <= 0 && !isOfferingObjectType(target.objectType)) continue;
-    if (derivation.fitScore <= 0) continue;
-
+  const ranked = objects.map(target => ({target,derivation:deriveEfesoFit({companyId:company.id,
+    companyIndustry:company.industry,companyCountry:company.primary_country_code,signals,themes,knowledge:target})}))
+    .filter(({derivation}) => derivation.matches.length > 0 && derivation.components.some(c =>
+      ["capability_match","business_problem_match"].includes(c.componentType) && c.contribution > 0))
+    .sort((a,b) => b.derivation.fitScore - a.derivation.fitScore || a.target.id.localeCompare(b.target.id))
+    .slice(0, Math.min(12, Math.max(1,Number(process.env.RESEARCH_MAX_FIT_CANDIDATES)||6)));
+  countResearch("fitCatalogObjects",objects.length);countResearch("fitShortlist",ranked.length);
+  const provider = input.provider ?? (usedFake ? createLabFakeFitProvider(ranked.length) : getLanguageModelProvider());
+  const evaluatedIds: string[] = [];
+  for (const {target,derivation} of ranked) {
     const fingerprint = computeEfesoFitFingerprint({
       companyId: company.id,
       knowledgeObjectId: target.id,
@@ -206,6 +151,7 @@ export async function runEfesoFitForCompany(input: {
         matches: derivation.matches,
       });
     }
+    evaluatedIds.push(candidate.id);
     await validateAndMaybePromoteFit({
       workspaceId: workspace.id,
       analysisId: analysis.id,
@@ -227,7 +173,7 @@ export async function runEfesoFitForCompany(input: {
     companyId: input.companyId,
     analysisId: analysis.id,
     researchRunId: run.id,
-    knowledgeCount: objects.length,
+    knowledgeCount: objects.length, evaluatedIds,
     usedFakeProvider: usedFake || provider.name === "fake",
   });
 }
@@ -301,7 +247,9 @@ async function validateAndMaybePromoteFit(input: {
         ),
       },
     });
+    const chain = validatedFitChain(parsed,input.signals.map(signal=>signal.id));
     const semantic = efesoFitSemanticOutputToRecords(parsed, run.id, input.derivation.fitLevel);
+    semantic.push({validatorCode:"operational_chain",validatorVersion:"fit-chain-v2",validatorType:"model",result:chain?"pass":"warn",severity:chain?"info":"review",message:chain?"Operational need and capability chain is explicit.":"Operational chain is incomplete or cites unknown signals.",details:chain?{...chain}:{},modelRunId:run.id});
     await insertEfesoFitValidations({
       workspaceId: input.workspaceId,
       candidateId: input.candidate.id,
@@ -334,9 +282,10 @@ async function summarizeFit(input: {
   analysisId: string;
   researchRunId: string;
   knowledgeCount: number;
+  evaluatedIds: string[];
   usedFakeProvider: boolean;
 }): Promise<EfesoFitSummary> {
-  const candidates = await listExistingEfesoFitCandidates(input.companyId);
+  const candidates = (await listExistingEfesoFitCandidates(input.companyId)).filter(candidate=>input.evaluatedIds.includes(candidate.id));
   return {
     companyId: input.companyId,
     analysisId: input.analysisId,

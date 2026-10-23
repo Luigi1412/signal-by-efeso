@@ -85,6 +85,7 @@ export function draftToExtractionOutput(draft: OpportunityDraft): OpportunityExt
     summary: draft.summary,
     opportunity_type: draft.opportunityType,
     rationale: draft.rationale,
+    operational_implication: null, client_validation: null, next_step: null,
     observed_fact: draft.rationaleBlocks.find((row) => row.rationaleType === "signal_trigger")?.statement ?? draft.title,
     inferred_need: "A related operational need may become relevant.",
     uncertainty: draft.rationaleBlocks.find((row) => row.rationaleType === "uncertainty")?.statement ?? "",

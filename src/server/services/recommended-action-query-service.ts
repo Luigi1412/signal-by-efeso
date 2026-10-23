@@ -1,4 +1,6 @@
 import "server-only";
+import { memberSafeOpportunity } from "@/server/knowledge/derived-visibility";
+import { loadMatchingCatalog } from "@/server/knowledge/matching-catalog";
 import { requireAuthUserId } from "@/server/session";
 import * as workspaceRepository from "@/server/repositories/workspace-repository";
 import { PersistenceUnavailableError } from "@/server/persistence-error";
@@ -52,6 +54,7 @@ export async function searchRecommendedActions(
   const items: RecommendedActionListItem[] = [];
   for (const row of rows) {
     if (row.status === "dismissed" && filters.status !== "dismissed") continue;
+    if (!await actionIsVisible(workspace.id,row)) continue;
     items.push(await toListItem(workspace.id, row, companies));
   }
   const filtered = items.filter((item) => {
@@ -80,7 +83,7 @@ export async function getRecommendedActionDetail(id: string): Promise<Recommende
   const workspace = await workspaceRepository.getCurrentWorkspace();
   if (!workspace) throw new PersistenceUnavailableError();
   const row = await getRecommendedAction(workspace.id, id);
-  if (!row) return null;
+  if (!row || !await actionIsVisible(workspace.id,row)) return null;
   const companies = await listCompaniesForWorkspace(workspace.id);
   const listItem = await toListItem(workspace.id, row, companies);
   const [rationales, knowledgeLinks] = await Promise.all([listActionRationales(row.id), listActionKnowledge(row.id)]);
@@ -140,4 +143,10 @@ async function toListItem(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+async function actionIsVisible(workspaceId: string, row: RecommendedActionRow): Promise<boolean> {
+  if (!row.opportunity_id || !await memberSafeOpportunity(workspaceId,row.company_id,row.opportunity_id)) return false;
+  const safeIds = new Set((await loadMatchingCatalog(workspaceId)).map(o=>o.id));
+  return (await listActionKnowledge(row.id)).every(link=>safeIds.has(link.knowledge_object_id));
 }

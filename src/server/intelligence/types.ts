@@ -193,6 +193,7 @@ export interface AccountIntelligenceCandidateView {
 }
 
 export interface EfesoFitView {
+  operationalChain?: import("./fit-chain").FitOperationalChain | null;
   id: string;
   companyId: string;
   companyName: string;

@@ -110,6 +110,7 @@ export interface OpportunityDeterministicContext {
 }
 
 export interface OpportunityListItem {
+  operationalImplication?: string | null; potentialNeed?: string | null; clientValidation?: string | null; nextStep?: string | null;
   id: string;
   companyId: string;
   companyName: string;

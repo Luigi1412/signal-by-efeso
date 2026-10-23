@@ -24,7 +24,7 @@ import { requireAdminUserId } from "@/server/session";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { PersistenceUnavailableError } from "@/server/persistence-error";
-import { getActiveAccountIntelligence, listActiveEfesoFitsForCompany } from "@/server/intelligence/persistence";
+import { getActiveAccountIntelligence, listActiveEfesoFitsForCompany, listEfesoFitValidations } from "@/server/intelligence/persistence";
 import { loadAccountSignals } from "@/server/intelligence/load-signals";
 import { deriveAccountThemes } from "@/server/intelligence/themes";
 import { detectAccountTensions } from "@/server/intelligence/tensions";
@@ -97,10 +97,12 @@ export function createLabFakeOpportunityProvider(drafts: OpportunityDraft[]): Fa
   return new FakeLanguageModelProvider(items);
 }
 
-async function loadFits(workspaceId: string, companyId: string): Promise<ActiveFitInput[]> {
+async function loadFits(workspaceId: string, companyId: string, signalIds: string[]): Promise<ActiveFitInput[]> {
   const rows = await listActiveEfesoFitsForCompany(workspaceId, companyId);
   const fits: ActiveFitInput[] = [];
   for (const row of rows) {
+    const chain = row.origin_candidate_id ? (await listEfesoFitValidations(row.origin_candidate_id)).find(v=>v.validator_code === "operational_chain" && v.result === "pass")?.details as unknown as import("@/server/intelligence/fit-chain").FitOperationalChain | undefined : undefined;
+    if (!chain || !chain.signalIds.every(id=>signalIds.includes(id))) continue;
     const target = await loadKnowledgeFitTarget(workspaceId, row.knowledge_object_id);
     if (!target) continue;
     fits.push({
@@ -114,7 +116,7 @@ async function loadFits(workspaceId: string, companyId: string): Promise<ActiveF
       status: row.status,
       fitLevel: row.fit_level,
       fitScore: row.fit_score,
-      fitReasonSummary: row.fit_reason_summary,
+      fitReasonSummary: `${chain.movement} ${chain.operationalImplication} Hipótese: ${chain.possibleNeed} ${chain.fitRationale} Incerteza: ${chain.uncertainty}`,
       relatedCases: target.relatedObjects
         .filter((object) => object.objectType === "case")
         .map((object) => ({ id: object.id, name: object.canonicalName, status: "active" })),
@@ -162,7 +164,7 @@ export async function runOpportunitiesForCompany(input: {
   const allSignals = await loadAccountSignals(workspace.id, input.companyId);
   const signals = allSignals.filter((signal) => signal.status === "active");
   if (signals.length === 0) throw new Error("SIGNALS_NOT_FOUND");
-  const fits = await loadFits(workspace.id, input.companyId);
+  const fits = await loadFits(workspace.id, input.companyId, signals.map(s=>s.id));
   if (fits.length === 0) throw new Error("FITS_NOT_FOUND");
 
   const snapshot = await getSnapshotForRun(workspace.id, input.researchRunId);
@@ -198,11 +200,12 @@ export async function runOpportunitiesForCompany(input: {
     fits,
     knowledge,
   };
-  const drafts = proposeOpportunityDrafts(derivationInput);
+  const drafts = proposeOpportunityDrafts(derivationInput).slice(0,3);
   const usedFake = Boolean(input.useFakeProvider) && !input.provider;
   const provider =
     input.provider ?? (usedFake ? createLabFakeOpportunityProvider(drafts) : getLanguageModelProvider());
 
+  const evaluatedIds: string[] = [];
   for (const draft of drafts) {
     const { run: modelRun, parsed } = await executeStructuredModelRun({
       workspaceId: workspace.id,
@@ -229,6 +232,15 @@ export async function runOpportunitiesForCompany(input: {
       },
     });
     const merged = mergeDraft(draft, parsed.title, parsed.summary, parsed.rationale, parsed.uncertainty);
+    const chain = [
+      {rationaleType:"operational_implication" as const,statement:parsed.operational_implication},
+      {rationaleType:"potential_need" as const,statement:parsed.inferred_need},
+      {rationaleType:"client_validation" as const,statement:parsed.client_validation},
+      {rationaleType:"next_step" as const,statement:parsed.next_step},
+    ];
+    // No canned replacement: an incomplete operational chain cannot become an opportunity.
+    if (chain.some(block => !block.statement?.trim())) continue;
+    merged.rationaleBlocks.push(...chain.map(block=>({...block,statement:block.statement!,sourceType:null,sourceId:null})));
     const primaryFit = fits.find((fit) => fit.id === merged.primaryEfesoFitId) ?? null;
     const fingerprint = fingerprintFromDraft(input.companyId, merged, primaryFit?.knowledgeName ?? null);
     let candidate = await findOpportunityCandidateByFingerprint(workspace.id, input.companyId, fingerprint);
@@ -245,6 +257,7 @@ export async function runOpportunitiesForCompany(input: {
         metadata: { origin: usedFake || provider.name === "fake" ? "lab_fake" : "pipeline" },
       });
     }
+    evaluatedIds.push(candidate.id);
     await validateAndMaybePromoteOpportunity({
       workspaceId: workspace.id,
       analysisId: analysis.id,
@@ -268,7 +281,7 @@ export async function runOpportunitiesForCompany(input: {
     analysisId: analysis.id,
     researchRunId: run.id,
     signalCount: signals.length,
-    fitCount: fits.length,
+    fitCount: fits.length, evaluatedIds,
     usedFakeProvider: usedFake || provider.name === "fake",
   });
 }
@@ -454,10 +467,10 @@ async function summarizeOpportunities(input: {
   analysisId: string;
   researchRunId: string;
   signalCount: number;
-  fitCount: number;
+  fitCount: number; evaluatedIds: string[];
   usedFakeProvider: boolean;
 }): Promise<OpportunitySummary> {
-  const candidates = await listExistingOpportunityCandidates(input.companyId);
+  const candidates = (await listExistingOpportunityCandidates(input.companyId)).filter(candidate=>input.evaluatedIds.includes(candidate.id));
   return {
     companyId: input.companyId,
     analysisId: input.analysisId,

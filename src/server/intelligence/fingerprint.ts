@@ -21,6 +21,7 @@ export function computeEfesoFitFingerprint(input: {
   return sha256Json({
     company_id: input.companyId,
     knowledge_object_id: input.knowledgeObjectId,
+    policy_version: "fit-chain-v2",
     components: input.components
       .map((row) => ({ type: row.componentType, value: row.componentValue, contribution: row.contribution }))
       .sort((a, b) => a.type.localeCompare(b.type) || a.value.localeCompare(b.value)),

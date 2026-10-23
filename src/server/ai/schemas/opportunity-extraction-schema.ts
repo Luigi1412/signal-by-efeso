@@ -11,6 +11,9 @@ export const opportunityExtractionOutputSchema = z.object({
   observed_fact: z.string(),
   inferred_need: z.string(),
   uncertainty: z.string(),
+  operational_implication: z.string().nullable(),
+  client_validation: z.string().nullable(),
+  next_step: z.string().nullable(),
 });
 
 export type OpportunityExtractionOutput = z.infer<typeof opportunityExtractionOutputSchema>;

@@ -1,4 +1,5 @@
 import "server-only";
+import { memberSafeOpportunity } from "@/server/knowledge/derived-visibility";
 import { requireAuthUserId } from "@/server/session";
 import * as workspaceRepository from "@/server/repositories/workspace-repository";
 import { PersistenceUnavailableError } from "@/server/persistence-error";
@@ -50,6 +51,7 @@ export async function searchOpportunities(filters: SearchOpportunitiesFilters = 
   const items: OpportunityListItem[] = [];
   for (const row of rows) {
     if (row.status === "dismissed") continue;
+    if (!await memberSafeOpportunity(workspace.id,row.company_id,row.id)) continue;
     const item = await toListItem(workspace.id, row, companies);
     items.push(item);
   }
@@ -101,6 +103,7 @@ export async function getOpportunityDetail(id: string): Promise<OpportunityDetai
   if (!workspace) throw new PersistenceUnavailableError();
   const row = await getOpportunity(workspace.id, id);
   if (!row || (row.status !== "active" && row.status !== "archived" && row.status !== "dismissed")) return null;
+  if (!await memberSafeOpportunity(workspace.id,row.company_id,row.id)) return null;
   const companies = await listCompaniesForWorkspace(workspace.id);
   const listItem = await toListItem(workspace.id, row, companies);
   const [signalLinks, fitLinks, knowledgeLinks, rationales] = await Promise.all([
@@ -230,6 +233,10 @@ async function toListItem(
     triggerSignalTitle: triggerSignal?.title ?? null,
     triggerSignalId: triggerSignal?.id ?? null,
     uncertaintyStatement: uncertainty,
+    operationalImplication:rationales.find(r=>r.rationale_type==="operational_implication")?.statement??null,
+    potentialNeed:rationales.find(r=>r.rationale_type==="potential_need")?.statement??null,
+    clientValidation:rationales.find(r=>r.rationale_type==="client_validation")?.statement??null,
+    nextStep:rationales.find(r=>r.rationale_type==="next_step")?.statement??null,
     demoOrigin: isDemoOrigin(row.metadata),
     createdAt: row.created_at,
     updatedAt: row.updated_at,

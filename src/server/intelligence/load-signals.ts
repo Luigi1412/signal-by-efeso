@@ -1,4 +1,7 @@
 import "server-only";
+import { researchRuntime } from "@/server/external-research/runtime";
+import { loadResearchAssessment } from "@/server/product/research-assessment";
+import { getResearchRun } from "@/server/external-research/persistence";
 import {
   listClaimsByIds,
   listEvidenceQuotesForClaims,
@@ -23,7 +26,15 @@ function nestedExcerpt(value: { excerpt: string } | { excerpt: string }[] | null
 }
 
 export async function loadAccountSignals(workspaceId: string, companyId: string): Promise<AccountSignalInput[]> {
-  const rows = await listSignalsForCompany(workspaceId, companyId);
+  let rows = await listSignalsForCompany(workspaceId, companyId);
+  const runtime = researchRuntime.getStore();
+  if (runtime) {
+    const run = await getResearchRun(workspaceId,runtime.runId);
+    if (!run) return [];
+    const assessment = await loadResearchAssessment(run);
+    const ids = new Set(assessment.qualifiedSignalIds);
+    rows = rows.filter(row => ids.has(row.id));
+  }
   const out: AccountSignalInput[] = [];
   for (const signal of rows) {
     const [tagRows, claimLinks] = await Promise.all([listSignalTags(signal.id), listSignalClaims(signal.id)]);
