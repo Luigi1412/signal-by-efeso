@@ -24,6 +24,7 @@ test("unsupported MIME is rejected", async () => {
   await assert.rejects(
     () =>
       safeFetch({
+        lookup: async () => ["1.1.1.1"],
         url: "https://example.com/file.zip",
         fetchImpl: async () => new Response("zip", { status: 200, headers: { "content-type": "application/zip" } }),
       }),
@@ -35,6 +36,7 @@ test("paywall or login page is unavailable", async () => {
   await assert.rejects(
     () =>
       safeFetch({
+        lookup: async () => ["1.1.1.1"],
         url: "https://example.com/article",
         fetchImpl: async () =>
           new Response('<html><body>paywall subscribe to continue <input name="password" /></body></html>', {
@@ -50,6 +52,7 @@ test("very large payload is limited", async () => {
   await assert.rejects(
     () =>
       safeFetch({
+        lookup: async () => ["1.1.1.1"],
         url: "https://example.com/report.pdf",
         maxBytes: 64,
         fetchImpl: async () =>

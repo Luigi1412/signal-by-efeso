@@ -1,4 +1,5 @@
 import "server-only";
+import { assertResearchOwned, countResearch } from "@/server/external-research/runtime";
 import type { z } from "zod";
 import type { LanguageModelProvider, StructuredGenerationRequest } from "@/server/ai/language-model-provider";
 import { ModelIncompleteResponseError, ModelRefusalError } from "@/server/ai/errors";
@@ -15,6 +16,9 @@ export async function executeStructuredModelRun<T extends z.ZodType>(input: {
   request: StructuredGenerationRequest<T>;
   inputManifest: Record<string, unknown>;
 }): Promise<{ run: ModelRunRow; parsed: z.infer<T> }> {
+  await assertResearchOwned();
+  countResearch("modelCalls");
+  if (input.request.taskType === "claim_extraction") countResearch("extractions");
   const inputHash = sha256Json({
     prompt_version: input.request.promptVersion,
     schema_version: input.request.schemaVersion,
@@ -38,8 +42,10 @@ export async function executeStructuredModelRun<T extends z.ZodType>(input: {
     inputHash,
   });
 
+  const modelStarted = performance.now();
   try {
     const result = await input.provider.generateStructured(input.request);
+    await assertResearchOwned();
     const completed = await completeModelRun({
       id: run.id,
       status: "completed",
@@ -72,5 +78,5 @@ export async function executeStructuredModelRun<T extends z.ZodType>(input: {
       errorMessage: message.slice(0, 500),
     });
     throw error;
-  }
+  } finally { countResearch("modelMs",Math.round(performance.now()-modelStarted)); }
 }

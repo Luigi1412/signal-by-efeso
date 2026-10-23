@@ -1,3 +1,4 @@
+import { getDomain } from "tldts";
 export function normalizeCompanyQuery(value: string): string {
   return value
     .normalize("NFD")
@@ -34,9 +35,8 @@ export function hostnameOf(raw: string): string | null {
 }
 
 export function registrableDomain(host: string): string {
-  const parts = host.replace(/^www\./, "").toLowerCase().split(".").filter(Boolean);
-  if (parts.length <= 2) return parts.join(".");
-  return parts.slice(-2).join(".");
+  const normalized = host.replace(/^www\./, "").toLowerCase();
+  return getDomain(normalized, { allowPrivateDomains: true }) ?? normalized;
 }
 
 export function isSubdomainOrEqual(host: string, officialDomain: string): boolean {

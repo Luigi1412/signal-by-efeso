@@ -1,4 +1,5 @@
 import "server-only";
+import { assertResearchOwned, researchRuntime } from "./runtime";
 import { createPipelineAdminClient } from "@/lib/supabase/pipeline-admin";
 import { PIPELINE_VERSION, RESEARCH_POLICY_VERSION } from "@/server/constants";
 import type { ExternalResearchRunRow, ExternalResearchStatus, ExternalSourceCandidateRow, SourceCandidateStatus } from "./types";
@@ -73,13 +74,15 @@ export async function updateResearchRun(
   runId: string,
   patch: Partial<ExternalResearchRunRow>,
 ): Promise<ExternalResearchRunRow> {
-  const { data, error } = await db()
+  await assertResearchOwned();
+  let query = db()
     .from("external_research_runs")
     .update(patch)
     .eq("workspace_id", workspaceId)
-    .eq("id", runId)
-    .select("*")
-    .single();
+    .eq("id", runId);
+  const runtime = researchRuntime.getStore();
+  if (runtime) query = query.eq("worker_id", runtime.owner).neq("status", "cancelled");
+  const { data, error } = await query.select("*").single();
   if (error) throw error;
   return data as ExternalResearchRunRow;
 }
@@ -141,69 +144,6 @@ export async function listEligibleResearchRunsForWorker(limit = 8): Promise<Exte
     .limit(limit);
   if (error) throw error;
   return (data ?? []) as ExternalResearchRunRow[];
-}
-
-/**
- * Safe DB lock: only one worker owns a run until lock expires.
- * Returns the row when claimed; null if another worker holds the lock.
- */
-export async function claimResearchRunForWorker(
-  runId: string,
-  workerId: string,
-  lockMs = 120_000,
-): Promise<ExternalResearchRunRow | null> {
-  const now = new Date();
-  const until = new Date(now.getTime() + lockMs).toISOString();
-  const nowIso = now.toISOString();
-  const { data: current, error: loadError } = await db()
-    .from("external_research_runs")
-    .select("*")
-    .eq("id", runId)
-    .maybeSingle();
-  if (loadError) throw loadError;
-  if (!current) return null;
-  const row = current as ExternalResearchRunRow;
-  if (!WORKER_ACTIVE_STATUSES.includes(row.status)) return null;
-  if (row.worker_lock_until && row.worker_lock_until > nowIso && row.worker_id && row.worker_id !== workerId) {
-    return null;
-  }
-  const { data, error } = await db()
-    .from("external_research_runs")
-    .update({
-      worker_id: workerId,
-      worker_lock_until: until,
-      worker_heartbeat_at: nowIso,
-    })
-    .eq("id", runId)
-    .or(`worker_lock_until.is.null,worker_lock_until.lt.${nowIso},worker_id.eq.${workerId}`)
-    .select("*")
-    .maybeSingle();
-  if (error) throw error;
-  return (data as ExternalResearchRunRow | null) ?? null;
-}
-
-export async function releaseResearchRunWorkerLock(runId: string, workerId: string): Promise<void> {
-  await db()
-    .from("external_research_runs")
-    .update({
-      worker_id: null,
-      worker_lock_until: null,
-      worker_heartbeat_at: new Date().toISOString(),
-    })
-    .eq("id", runId)
-    .eq("worker_id", workerId);
-}
-
-export async function heartbeatResearchRunWorker(runId: string, workerId: string, lockMs = 120_000): Promise<void> {
-  const until = new Date(Date.now() + lockMs).toISOString();
-  await db()
-    .from("external_research_runs")
-    .update({
-      worker_lock_until: until,
-      worker_heartbeat_at: new Date().toISOString(),
-    })
-    .eq("id", runId)
-    .eq("worker_id", workerId);
 }
 
 export async function insertSourceCandidates(
@@ -274,13 +214,14 @@ export async function insertResearchEvent(input: {
   payload?: Record<string, unknown>;
   actorUserId?: string | null;
 }): Promise<void> {
-  await db().from("external_research_events").insert({
+  const {error} = await db().from("external_research_events").insert({
     workspace_id: input.workspaceId,
     research_run_id: input.researchRunId,
     event_type: input.eventType,
     payload: input.payload ?? {},
     actor_user_id: input.actorUserId ?? null,
   });
+  if (error) throw error;
 }
 
 export async function listCompanyAliases(workspaceId: string): Promise<{ company_id: string; alias: string }[]> {
@@ -299,11 +240,14 @@ export async function transitionRun(
   from: ExternalResearchStatus | ExternalResearchStatus[],
   patch: Partial<ExternalResearchRunRow> & { status: ExternalResearchStatus },
 ): Promise<ExternalResearchRunRow | null> {
+  await assertResearchOwned();
   let query = db()
     .from("external_research_runs")
     .update(patch)
     .eq("workspace_id", workspaceId)
     .eq("id", runId);
+  const runtime = researchRuntime.getStore();
+  if (runtime) query = query.eq("worker_id", runtime.owner).gt("worker_lock_until", new Date().toISOString());
   query = Array.isArray(from) ? query.in("status", from) : query.eq("status", from);
   const { data, error } = await query.select("*").maybeSingle();
   if (error) throw error;
@@ -483,43 +427,20 @@ export async function listResearchEvents(runId: string): Promise<{ event_type: s
   return (data ?? []) as { event_type: string; payload: Record<string, unknown>; created_at: string }[];
 }
 
-export async function countPromotedPipeline(workspaceId: string, companyId: string, analysisId: string) {
-  const claims = await db()
-    .from("claims")
-    .select("id", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .eq("company_id", companyId)
-    .eq("analysis_id", analysisId);
-  const signals = await db()
-    .from("signals")
-    .select("id", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .eq("company_id", companyId)
-    .eq("status", "active");
-  const opportunities = await db()
-    .from("opportunities")
-    .select("id", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .eq("company_id", companyId)
-    .eq("status", "active");
-  const pending = await db()
-    .from("claim_candidates")
-    .select("id", { count: "exact", head: true })
-    .eq("analysis_id", analysisId)
-    .eq("status", "pending_validation");
-  const intelligence = await db()
-    .from("account_intelligence")
-    .select("id", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .eq("company_id", companyId)
-    .eq("status", "active");
-  return {
-    claims: claims.count ?? 0,
-    signals: signals.count ?? 0,
-    opportunities: opportunities.count ?? 0,
-    pendingFacts: pending.count ?? 0,
-    intelligence: intelligence.count ?? 0,
-  };
+/** Progress counts are scoped to this execution, never the company's historical totals. */
+export async function countPromotedPipeline(run: ExternalResearchRunRow) {
+  const {workspace_id:workspaceId,resolved_company_id:companyId,analysis_id:analysisId}=run;
+  const requests = [
+    db().from("claims").select("id",{count:"exact",head:true}).eq("workspace_id",workspaceId).eq("company_id",companyId).eq("analysis_id",analysisId).eq("claim_status","active"),
+    db().from("signals").select("id",{count:"exact",head:true}).eq("workspace_id",workspaceId).eq("company_id",companyId).eq("status","active").gte("created_at",run.created_at),
+    db().from("opportunities").select("id",{count:"exact",head:true}).eq("workspace_id",workspaceId).eq("company_id",companyId).eq("status","active").in("id",Array.isArray(run.resolution_payload.supported_opportunity_ids)?run.resolution_payload.supported_opportunity_ids:["00000000-0000-0000-0000-000000000000"]),
+    db().from("claim_candidates").select("id",{count:"exact",head:true}).eq("workspace_id",workspaceId).eq("analysis_id",analysisId).eq("status","pending_validation"),
+    db().from("account_intelligence").select("id",{count:"exact",head:true}).eq("workspace_id",workspaceId).eq("company_id",companyId).eq("status","active").gte("created_at",run.created_at),
+  ];
+  const results=await Promise.all(requests);
+  for(const result of results) if(result.error) throw result.error;
+  const [claims,signals,opportunities,pending,intelligence]=results;
+  return {claims:claims.count??0,signals:signals.count??0,opportunities:opportunities.count??0,pendingFacts:pending.count??0,intelligence:intelligence.count??0};
 }
 
 export async function listActiveMetricClaims(workspaceId: string, companyId: string) {

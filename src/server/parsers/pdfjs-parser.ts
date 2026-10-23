@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_EXTRACTION_PAGES, PDF_PARSER_NAME, PDF_PARSER_VERSION } from "./constants";
+import { researchSignal, abortable } from "@/server/external-research/runtime";
 import type { ContentBlockType, DocumentParser, ParseOutcome, ParsedContentBlock } from "./types";
 
 interface TextItem {
@@ -37,6 +38,7 @@ export class PdfJsParser implements DocumentParser {
       return { ok: false, code: "UNSUPPORTED_TYPE", message: "PDF parser accepts application/pdf only." };
     }
 
+    let cleanup: (() => Promise<void>) | undefined;
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const data = Buffer.isBuffer(buffer)
@@ -49,27 +51,22 @@ export class PdfJsParser implements DocumentParser {
         disableFontFace: true,
         useSystemFonts: true,
       });
-      const doc = await loadingTask.promise;
+      cleanup = () => loadingTask.destroy();
+      const doc = await abortable(loadingTask.promise, researchSignal());
       const envPages = Number(process.env.CONTROLLED_EXTRACTION_MAX_PAGES);
       const maxPages =
         Number.isFinite(envPages) && envPages > 0 ? envPages : DEFAULT_MAX_EXTRACTION_PAGES;
-      if (doc.numPages > maxPages) {
-        return {
-          ok: false,
-          code: "TOO_MANY_PAGES",
-          message: `PDF exceeds the ${maxPages}-page controlled extraction limit.`,
-        };
-      }
 
       const blocks: ParsedContentBlock[] = [];
       let totalChars = 0;
       let pagesWithText = 0;
       let sectionTitle: string | null = null;
 
-      for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
-        const page = await doc.getPage(pageNumber);
+      for (let pageNumber = 1; pageNumber <= Math.min(doc.numPages, maxPages); pageNumber += 1) {
+        researchSignal()?.throwIfAborted();
+        const page = await abortable(doc.getPage(pageNumber), researchSignal());
         const viewport = page.getViewport({ scale: 1 });
-        const textContent = await page.getTextContent();
+        const textContent = await abortable(page.getTextContent(), researchSignal());
         const items: TextItem[] = [];
 
         for (const item of textContent.items) {
@@ -111,9 +108,10 @@ export class PdfJsParser implements DocumentParser {
               itemCount: block.itemCount,
             },
             parseConfidence: 80,
-            metadata: { pageHeight: viewport.height },
+            metadata: { pageHeight: viewport.height, documentPages: doc.numPages, processedPages: Math.min(doc.numPages, maxPages), coverageLimited: doc.numPages > maxPages },
           });
         }
+        page.cleanup();
       }
 
       if (totalChars < MIN_DOC_CHARS || pagesWithText === 0) {
@@ -134,8 +132,9 @@ export class PdfJsParser implements DocumentParser {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "PDF parse failed.";
+      researchSignal()?.throwIfAborted();
       return { ok: false, code: "PARSE_ERROR", message };
-    }
+    } finally { await cleanup?.(); }
   }
 }
 

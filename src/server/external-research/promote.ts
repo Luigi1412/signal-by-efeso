@@ -1,4 +1,5 @@
 import "server-only";
+import { assertResearchOwned } from "./runtime";
 import { createPipelineAdminClient } from "@/lib/supabase/pipeline-admin";
 
 type PromoteFn =
@@ -10,6 +11,7 @@ type PromoteFn =
   | "promote_recommended_action_candidate";
 
 export async function promoteViaPipelineAdmin(fn: PromoteFn, candidateId: string): Promise<string> {
+  await assertResearchOwned();
   const rpc = createPipelineAdminClient() as unknown as {
     rpc: (name: PromoteFn, args: { p_candidate_id: string }) => Promise<{ data: string | null; error: { message: string } | null }>;
   };

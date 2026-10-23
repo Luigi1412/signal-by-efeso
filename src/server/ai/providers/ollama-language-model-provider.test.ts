@@ -198,7 +198,7 @@ test("Ollama provider uses a compact schema hint when the JSON schema is large",
     schemaVersion: "claim-extraction-schema-v1",
   });
   assert.equal(captured.format, "json");
-  assert.ok((captured.system ?? "").includes("currency_code ISO-3"));
+  assert.ok((captured.system ?? "").includes("currency_code"));
   assert.ok((captured.system ?? "").length < 20_000);
   assert.ok((captured.num_ctx ?? 0) >= 4096);
 });
@@ -241,8 +241,8 @@ test("Ollama provider uses a validation-batch compact hint instead of the extrac
     schema: claimValidationBatchOutputSchema,
     schemaVersion: CLAIM_VALIDATION_SCHEMA_VERSION,
   });
-  assert.ok(captured.includes('"items":Item[]'));
-  assert.ok(!captured.includes('"claims":Claim[]'));
+  assert.ok(captured.includes('"items":[') && captured.includes('"validators"'));
+  assert.ok(!captured.includes('"claims":['));
 });
 
 test("Ollama provider maps claims to items and fills signal candidate keys", async () => {

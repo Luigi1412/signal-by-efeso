@@ -1,3 +1,4 @@
+import { abortable, countResearch, researchSignal } from "@/server/external-research/runtime";
 import { z } from "zod";
 import {
   ModelIncompleteResponseError,
@@ -42,7 +43,7 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
     this.baseUrl = (options.baseUrl ?? process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
     this.modelOverride = options.model?.trim() || null;
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.timeoutMs = options.timeoutMs ?? readPositiveInt(process.env.OLLAMA_REQUEST_TIMEOUT_MS, 600_000);
+    this.timeoutMs = options.timeoutMs ?? readPositiveInt(process.env.OLLAMA_REQUEST_TIMEOUT_MS, 180_000);
     semaphore.max = options.maxConcurrent ?? readPositiveInt(process.env.OLLAMA_MAX_CONCURRENT_REQUESTS, 1);
   }
 
@@ -53,13 +54,16 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
     if (!model) {
       throw new ModelProviderUnavailableError("OLLAMA_MODEL_NOT_CONFIGURED");
     }
-    await acquire();
+    const signal = researchSignal();
+    await acquire(signal);
     const started = Date.now();
     try {
       const format = jsonSchemaFromZod(request.schema);
       const schemaHint = schemaHintFromZod(request.schema);
       let lastParseError: unknown = null;
       for (let repair = 0; repair <= JSON_REPAIR_ATTEMPTS; repair += 1) {
+        signal?.throwIfAborted();
+        if (repair > 0) countResearch("modelRetries");
         const response = await this.chat({
           model,
           instructions: request.instructions,
@@ -124,16 +128,17 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
     const schemaBlock = input.schemaHint
       ? `\n\nRequired JSON schema:\n${input.schemaHint}\nOmit properties whose value would be null. Keep JSON compact. Do not emit markdown.`
       : "";
-    const numPredict = readPositiveInt(process.env.OLLAMA_NUM_PREDICT, 1200);
+    const numPredict = readPositiveInt(process.env.OLLAMA_NUM_PREDICT, input.schemaHint?.includes("validators") ? 3000 : 1800);
     const systemContent = `${input.instructions}${schemaBlock}\n\nReturn only a JSON object that matches the required schema. Do not include markdown fences or chain-of-thought.`;
     const numCtx = resolveNumCtx(systemContent.length + user.length, numPredict);
     const body = JSON.stringify({
       model: input.model,
       stream: false,
       format: input.format,
-      keep_alive: "30m",
+      keep_alive: process.env.OLLAMA_KEEP_ALIVE ?? "2m",
       options: {
         temperature: 0,
+        num_thread: readPositiveInt(process.env.OLLAMA_NUM_THREADS, 2),
         num_ctx: numCtx,
         num_predict: numPredict,
       },
@@ -148,15 +153,17 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
 
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= TRANSIENT_ATTEMPTS; attempt += 1) {
+      researchSignal()?.throwIfAborted();
+      if (attempt > 1) countResearch("modelRetries");
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
-        const response = await this.fetchImpl(`${this.baseUrl}/api/chat`, {
+        const response = await abortable(this.fetchImpl(`${this.baseUrl}/api/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body,
-          signal: controller.signal,
-        });
+          signal: researchSignal() ? AbortSignal.any([controller.signal, researchSignal()!]) : controller.signal,
+        }), researchSignal());
         if (response.status >= 500 || response.status === 429) {
           lastError = new ModelIncompleteResponseError(`Ollama chat failed (${response.status}).`);
           if (attempt >= TRANSIENT_ATTEMPTS) throw lastError;
@@ -166,12 +173,17 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
         if (!response.ok) {
           throw new ModelProviderUnavailableError(`OLLAMA_UNAVAILABLE (${response.status})`);
         }
-        const payload = (await response.json()) as {
+        const payload = (await abortable(response.json(), researchSignal() ? AbortSignal.any([controller.signal, researchSignal()!]) : controller.signal)) as {
           model?: string;
           message?: { content?: string };
           prompt_eval_count?: number;
           eval_count?: number;
+          total_duration?: number; load_duration?: number;
         };
+        if (typeof payload.total_duration === "number") countResearch("ollamaComputeMs",payload.total_duration/1e6);
+        if (typeof payload.load_duration === "number") countResearch("ollamaLoadMs",payload.load_duration/1e6);
+        if (typeof payload.prompt_eval_count === "number") countResearch("inputTokens",payload.prompt_eval_count);
+        if (typeof payload.eval_count === "number") countResearch("outputTokens",payload.eval_count);
         return {
           content: payload.message?.content ?? "",
           inputTokens: typeof payload.prompt_eval_count === "number" ? payload.prompt_eval_count : null,
@@ -179,6 +191,7 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
           model: payload.model ?? null,
         };
       } catch (error) {
+        researchSignal()?.throwIfAborted();
         if (error instanceof ModelProviderUnavailableError) throw error;
         if (isTimeout(error)) {
           throw new ModelIncompleteResponseError("Ollama request timed out.");
@@ -212,83 +225,18 @@ function schemaHintFromZod(schema: z.ZodType): string | null {
 }
 
 function compactSchemaHint(schema: Record<string, unknown>): string {
-  const keys = schemaKeys(schema);
-  const enums = collectEnumHints(schema);
-  if (keys.includes("items") && keys.includes("schema_version")) {
-    return [
-      'Top-level JSON: {"schema_version":string,"items":Item[]}.',
-      "Item: candidate_index integer, candidate_id string, validators object.",
-      "validators keys: atomicity, grounding, geography_alignment, entity_alignment, period_alignment, numeric_consistency, unit_currency_consistency, modality_preservation, unsupported_inference.",
-      "Each validator: {result:pass|warn|fail, reason:short string}. grounding also has support_level:direct|strong_indirect|weak_indirect|none.",
-      "One item per candidate. Never omit result or reason. Do not return claims.",
-      enums.length > 0 ? `Enums: ${enums.join("; ")}` : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-  }
-  if (keys.includes("validators") && keys.includes("schema_version")) {
-    return [
-      'Top-level JSON: {"schema_version":string,"validators":{...}}.',
-      "validators keys: atomicity, grounding, geography_alignment, entity_alignment, period_alignment, numeric_consistency, unit_currency_consistency, modality_preservation, unsupported_inference.",
-      "Each validator: {result:pass|warn|fail, reason:short string}. grounding also has support_level:direct|strong_indirect|weak_indirect|none.",
-      "Never omit result or reason.",
-      enums.length > 0 ? `Enums: ${enums.join("; ")}` : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-  }
-  if (keys.includes("signals")) {
-    return [
-      'Top-level JSON: {"schema_version":string,"signals":Signal[]}.',
-      "Return signals:[] when the claims are only isolated financial metrics without a supported business event.",
-      "Signal: candidate_key, title, summary, core_event, signal_type, signal_nature event|state, assertion_mode, claims:[{claim_id,relationship_type}].",
-      "Do not invent events, commercial recommendations, or unsupported types.",
-      enums.length > 0 ? `Enums: ${enums.join("; ")}` : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-  }
-  return [
-    'Top-level JSON: {"schema_version":string,"claims":Claim[]}.',
-    'Claim: candidate_key, statement, claim_category, claim_type (always "fact"), assertion_mode,',
-    "entity:{entity_id:uuid-or-null}, geography:{level,country_code ISO-2 or null,state_region,city},",
-    "period:{type,start ISO-8601 date or null,end,as_of},",
-    "quantitative:{metric_name,numeric_value JSON number or null,unit,currency_code ISO-3 e.g. BRL not R$,scale},",
-    "citations:[{block_id,exact_quote verbatim from block text}], model_extraction_confidence integer 0-100 or null.",
-    enums.length > 0 ? `Enums: ${enums.join("; ")}` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function schemaKeys(schema: Record<string, unknown>): string[] {
-  const properties = schema.properties;
-  if (!properties || typeof properties !== "object") return [];
-  return Object.keys(properties as Record<string, unknown>);
-}
-
-function collectEnumHints(schema: unknown, path = ""): string[] {
-  if (!schema || typeof schema !== "object") return [];
-  const record = schema as Record<string, unknown>;
-  const out: string[] = [];
-  if (Array.isArray(record.enum) && path) {
-    out.push(`${path}=${record.enum.join("|")}`);
-  }
-  if (record.properties && typeof record.properties === "object") {
-    for (const [key, value] of Object.entries(record.properties as Record<string, unknown>)) {
-      out.push(...collectEnumHints(value, path ? `${path}.${key}` : key));
-    }
-  }
-  if (record.items) out.push(...collectEnumHints(record.items, path ? `${path}[]` : "[]"));
-  if (Array.isArray(record.anyOf)) {
-    for (const branch of record.anyOf) out.push(...collectEnumHints(branch, path));
-  }
-  if (record.$defs && typeof record.$defs === "object") {
-    for (const value of Object.values(record.$defs as Record<string, unknown>)) {
-      out.push(...collectEnumHints(value, path));
-    }
-  }
-  return out.slice(0, 12);
+  const shape = (node: Record<string, unknown>, depth=0): unknown => {
+    if (depth > 12) return "value";
+    const resolved = resolveJsonSchema(node,schema);
+    if (Object.prototype.hasOwnProperty.call(resolved,"const")) return resolved.const;
+    if (Array.isArray(resolved.enum)) return resolved.enum.join(" | ");
+    if (Array.isArray(resolved.anyOf)) return resolved.anyOf.map(branch=>shape(branch as Record<string,unknown>,depth+1));
+    if (resolved.items) return [shape(resolved.items as Record<string,unknown>,depth+1)];
+    if (resolved.properties && typeof resolved.properties === "object") return Object.fromEntries(
+      Object.entries(resolved.properties as Record<string,Record<string,unknown>>).map(([key,value])=>[key,shape(value,depth+1)]));
+    return resolved.type ?? "value";
+  };
+  return `JSON shape (array entries describe one item, strings describe types/enums): ${JSON.stringify(shape(schema))}`;
 }
 
 function zodJsonSchema(schema: z.ZodType): Record<string, unknown> | null {
@@ -537,13 +485,18 @@ function closeOpenStructures(text: string): string | null {
   return text.replace(/,\s*$/, "") + stack.reverse().join("");
 }
 
-async function acquire(): Promise<void> {
-  if (semaphore.active < semaphore.max) {
-    semaphore.active += 1;
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    semaphore.queue.push(resolve);
+async function acquire(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  if (semaphore.active < semaphore.max) { semaphore.active += 1; return; }
+  await new Promise<void>((resolve, reject) => {
+    const next = () => { signal?.removeEventListener("abort", cancel); resolve(); };
+    const cancel = () => {
+      const index = semaphore.queue.indexOf(next);
+      if (index >= 0) semaphore.queue.splice(index, 1);
+      reject(signal?.reason);
+    };
+    semaphore.queue.push(next);
+    signal?.addEventListener("abort", cancel, { once: true });
   });
 }
 
@@ -578,9 +531,9 @@ function readPositiveInt(raw: string | undefined, fallback: number): number {
 }
 
 function resolveNumCtx(promptChars: number, numPredict: number): number {
-  const configured = readPositiveInt(process.env.OLLAMA_NUM_CTX, 4096);
-  const needed = Math.ceil(promptChars / 2) + numPredict + 512;
-  if (needed > configured || promptChars > 2500) return Math.max(configured, 8192);
+  const configured = readPositiveInt(process.env.OLLAMA_NUM_CTX, 8192);
+  const needed = Math.ceil(promptChars / 3) + numPredict + 256;
+  if (needed > configured) throw new ModelIncompleteResponseError("Structured request exceeds the configured context budget; split the batch.");
   return configured;
 }
 

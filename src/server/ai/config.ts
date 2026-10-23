@@ -39,7 +39,7 @@ export function getOllamaBaseUrl(): string {
 
 export function getOllamaTimeoutMs(): number {
   const raw = Number(process.env.OLLAMA_REQUEST_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 600_000;
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 180_000;
 }
 
 export function getOllamaMaxConcurrentRequests(): number {
@@ -51,6 +51,7 @@ function ollamaModel(slot: "extraction" | "validation" | "generation"): string |
   const extraction = process.env.OLLAMA_EXTRACTION_MODEL?.trim() || null;
   const validation = process.env.OLLAMA_VALIDATION_MODEL?.trim() || null;
   const generation = process.env.OLLAMA_GENERATION_MODEL?.trim() || null;
+  if (process.env.OLLAMA_ALLOW_MULTIPLE_MODELS !== "true") return extraction || validation || generation;
   if (slot === "validation") return validation || extraction || generation;
   if (slot === "generation") return generation || extraction || validation;
   return extraction || generation || validation;

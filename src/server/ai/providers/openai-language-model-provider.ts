@@ -1,3 +1,4 @@
+import { researchSignal, countResearch } from "@/server/external-research/runtime";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import type { z } from "zod";
@@ -34,11 +35,13 @@ export class OpenAiLanguageModelProvider implements LanguageModelProvider {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) throw new ModelProviderUnavailableError("OPENAI_API_KEY is not configured.");
 
-    const client = new OpenAI({ apiKey });
+    const client = new OpenAI({ apiKey, maxRetries: 0, timeout: 180_000 });
     const started = Date.now();
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      researchSignal()?.throwIfAborted();
+      if (attempt > 0) countResearch("modelRetries");
       try {
         const response = await client.responses.parse({
           model: request.model,
@@ -47,7 +50,7 @@ export class OpenAiLanguageModelProvider implements LanguageModelProvider {
           instructions: request.instructions,
           input: request.input,
           text: { format: zodTextFormat(request.schema, request.schemaName) },
-        });
+        }, { signal: researchSignal() });
 
         const latencyMs = Date.now() - started;
         const refusal =
@@ -81,6 +84,7 @@ export class OpenAiLanguageModelProvider implements LanguageModelProvider {
           incompleteReason: null,
         };
       } catch (error) {
+        researchSignal()?.throwIfAborted();
         lastError = error;
         if (error instanceof ModelRefusalError || error instanceof ModelIncompleteResponseError) {
           throw error;

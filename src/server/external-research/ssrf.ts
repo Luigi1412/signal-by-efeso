@@ -1,3 +1,4 @@
+import ipaddr from "ipaddr.js";
 const BLOCKED_HOSTS = new Set(["localhost", "metadata.google.internal", "metadata.internal"]);
 
 export function assertSafeHttpUrl(raw: string): URL {
@@ -10,6 +11,7 @@ export function assertSafeHttpUrl(raw: string): URL {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("BLOCKED_PROTOCOL");
   }
+  if (url.username || url.password) throw new Error("BLOCKED_HOST");
   const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
   if (BLOCKED_HOSTS.has(host) || host.endsWith(".localhost") || host.endsWith(".local")) {
     throw new Error("BLOCKED_HOST");
@@ -21,17 +23,10 @@ export function assertSafeHttpUrl(raw: string): URL {
 }
 
 export function isPrivateOrMetadataAddress(host: string): boolean {
-  if (host === "::1" || host === "0.0.0.0") return true;
-  if (host === "169.254.169.254") return true;
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!ipv4) return false;
-  const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
-  if (a === 10 || a === 127 || a === 0) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  return false;
+  const address = host.replace(/^\[|\]$/g, "");
+  if (!ipaddr.isValid(address)) return false;
+  // Includes IPv4-mapped IPv6, ULA, link-local, multicast, reserved and transition ranges.
+  return ipaddr.process(address).range() !== "unicast";
 }
 
 export const ALLOWED_FETCH_MIME = new Set([
