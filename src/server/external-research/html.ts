@@ -55,3 +55,20 @@ function decode(value: string): string {
 function collapse(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
+
+/** Publication is explicit publisher metadata, never capture time or an inferred URL year. */
+export function extractPublicationDate(html: string): string | null {
+  const valid = (value: string) => {
+    const date = value.match(/^\s*(\d{4}-\d{2}-\d{2})/)?.[1];
+    if (!date) return null;
+    const stamp = new Date(`${date}T00:00:00Z`);
+    return !Number.isNaN(stamp.getTime()) && stamp.toISOString().slice(0,10) === date ? date : null;
+  };
+  for (const tag of html.matchAll(/<meta\b[^>]*>/gi)) {
+    if (!/(?:article:published_time|datePublished|pubdate|publication_date)/i.test(tag[0])) continue;
+    const date=valid(tag[0].match(/content\s*=\s*["']([^"']+)["']/i)?.[1]??"");
+    if (date) return date;
+  }
+  for (const match of html.matchAll(/"datePublished"\s*:\s*"([^"\n]+)"/gi)) { const date=valid(match[1]!);if(date)return date; }
+  return null;
+}

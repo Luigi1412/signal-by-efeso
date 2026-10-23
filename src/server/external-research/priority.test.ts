@@ -87,7 +87,7 @@ test("operational delivery disclosure ranks above older generic earnings title",
     domain,
   );
   assert.equal(sourcePriorityBand(deliveries, domain), "official_report");
-  assert.equal(sourcePriorityBand(olderEarnings, domain), "official_report");
+  assert.equal(sourcePriorityBand(olderEarnings, domain), "weak"); // Outside the current research horizon.
   const ranked = rankSourcesForInitialPass([olderEarnings, deliveries], domain, companyName);
   assert.equal(ranked[0]?.url, deliveries.url);
 });

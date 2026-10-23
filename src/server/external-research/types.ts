@@ -64,6 +64,12 @@ export type ResearchFailureCode =
   | "TAVILY_PROVIDER_ERROR";
 
 export interface CompanyIdentity {
+  entityKind?: "company" | "brand" | "parent" | "subsidiary";
+  relationshipToQuery?: "exact" | "brand_of" | "subsidiary_of" | "parent_of" | "unresolved";
+  parent?: { name: string; domain: string | null } | null;
+  brands?: string[];
+  subsidiaries?: string[];
+  publicIdentityEvidence?: string[];
   canonicalName: string;
   officialDomain: string;
   headquartersCountry: string;
@@ -115,7 +121,7 @@ export interface FetchedDocument {
 
 export interface ExternalResearchProvider {
   readonly name: string;
-  search(input: { query: string; limit: number }): Promise<DiscoveredSource[]>;
+  search(input: { query: string; limit: number; publishedAfter?: string }): Promise<DiscoveredSource[]>;
   fetchPage(url: string): Promise<FetchedDocument>;
   fetchDocument(url: string): Promise<FetchedDocument>;
 }

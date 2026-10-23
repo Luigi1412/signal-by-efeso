@@ -43,7 +43,7 @@ export function generateResearchQueries(input: {
       site: null,
     },
     { query: `${aliasClause} (supply chain OR logística OR operações OR manufatura OR produção OR productivity)`, site: null },
-    { query: `${primary} (markets OR Brasil OR Brazil OR Europe) (2024 OR 2025 OR 2026)`, site: null },
+    { query: `${primary} (operations OR capacity OR productivity OR restructuring OR integration)`, site: null },
   ];
 
   const pressSites: SearchQuery[] = isBr
@@ -64,22 +64,10 @@ export function officialSeedUrls(domain: string): string[] {
   const host = domain.replace(/^www\./, "");
   return [
     `https://ir.${host}/`,
-    `https://ri.${host}/`,
     `https://www.${host}/investors`,
-    `https://www.${host}/investor-relations`,
     `https://www.${host}/en/investors`,
-    `https://www.${host}/investidores`,
-    `https://www.${host}/ri`,
-    `https://${host}/investidores`,
-    `https://${host}/ri`,
     `https://www.${host}/newsroom`,
-    `https://www.${host}/en/newsroom`,
-    `https://www.${host}/press-releases`,
     `https://www.${host}/en/newsroom/press-releases`,
-    `https://www.${host}/imprensa`,
-    `https://www.${host}/noticias`,
-    `https://www.${host}/sustainability`,
-    `https://www.${host}/sustentabilidade`,
   ];
 }
 

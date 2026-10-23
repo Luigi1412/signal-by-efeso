@@ -48,7 +48,7 @@ export function resolveCompanyEntity(input: {
     return [toCandidateFromExisting(row, ["existing workspace record"])];
   });
 
-  const catalogMatches = PUBLIC_COMPANY_CATALOG.filter((identity) => identityMatches(identity, normalized, input.country, input.industry));
+  const catalogMatches = PUBLIC_COMPANY_CATALOG.filter((identity) => identityMatches(identity, normalized, input.industry));
 
   const unique = dedupeCandidates([
     ...existingMatches,
@@ -65,13 +65,6 @@ export function resolveCompanyEntity(input: {
   if (unique.length > 1) {
     const exact = unique.filter((candidate) => isExactOrAlias(candidate, normalized) && !isPartialOnly(candidate));
     if (exact.length === 1 && exact[0]) return { kind: "resolved", candidate: exact[0] };
-    // Research geography may filter local subsidiaries (e.g. Toyota BR) but must not invent HQ.
-    const countryFiltered = input.country
-      ? unique.filter((candidate) => candidate.headquartersCountry.toUpperCase() === input.country?.trim().toUpperCase())
-      : unique;
-    if (countryFiltered.length === 1 && countryFiltered[0] && isExactOrAlias(countryFiltered[0], normalized)) {
-      return { kind: "resolved", candidate: countryFiltered[0] };
-    }
     return { kind: "ambiguous", candidates: unique };
   }
 
@@ -87,7 +80,7 @@ export function resolveCompanyEntity(input: {
   return { kind: "unresolved", suggestions };
 }
 
-function identityMatches(identity: CompanyIdentity, normalized: string, country?: string | null, industry?: string | null): boolean {
+function identityMatches(identity: CompanyIdentity, normalized: string, industry?: string | null): boolean {
   const names = [identity.canonicalName, ...identity.aliases].map(normalizeCompanyQuery);
   const nameHit = names.some(
     (name) =>
@@ -97,9 +90,6 @@ function identityMatches(identity: CompanyIdentity, normalized: string, country?
       name.includes(normalized),
   );
   if (!nameHit) return false;
-  if (country && identity.headquartersCountry.toUpperCase() !== country.trim().toUpperCase() && normalized === "vale") {
-    return identity.headquartersCountry === "BR";
-  }
   if (industry && identity.industry && !identity.industry.toLowerCase().includes(industry.toLowerCase()) && names.every((name) => name !== normalized)) {
     return false;
   }
@@ -122,7 +112,7 @@ export function inferHeadquartersFromDomain(domain: string | null | undefined): 
 }
 
 function isExactOrAlias(candidate: EntityCandidate, normalized: string): boolean {
-  return [candidate.canonicalName, ...candidate.aliases].map(normalizeCompanyQuery).some((name) => name === normalized || name.startsWith(normalized));
+  return [candidate.canonicalName, ...candidate.aliases].map(normalizeCompanyQuery).some((name) => name === normalized);
 }
 
 function isPartialOnly(candidate: EntityCandidate): boolean {

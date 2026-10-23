@@ -16,12 +16,11 @@ test("brand alias resolves to controlling group without adopting research geogra
   assert.notEqual(result.candidate.headquartersCountry, "BR");
 });
 
-test("Toyota with BR research scope can resolve to local subsidiary when ambiguous", () => {
-  const result = resolveCompanyEntity({ query: "toyota", country: "BR" });
-  assert.equal(result.kind, "resolved");
-  if (result.kind !== "resolved") return;
-  assert.equal(result.candidate.headquartersCountry, "BR");
-  assert.match(result.candidate.officialDomain, /toyota\.com\.br/);
+test("research geography never silently selects a subsidiary", () => {
+  const result = resolveCompanyEntity({query:"toyota",country:"BR"});
+  assert.equal(result.kind,"ambiguous");
+  if(result.kind!=="ambiguous") return;
+  assert.deepEqual(new Set(result.candidates.map(c=>c.headquartersCountry)),new Set(["BR","JP"]));
 });
 
 test("Toyota without country stays ambiguous between group and local", () => {

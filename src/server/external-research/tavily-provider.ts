@@ -1,3 +1,4 @@
+import { researchSignal, abortable, countResearch } from "./runtime";
 import { getExternalResearchLimits, getTavilyApiKey } from "./config";
 import { HttpExternalResearchProvider } from "./http-provider";
 import { extractSiteRestriction, mapTavilySearchResults, type TavilySearchHit } from "./tavily-map";
@@ -46,16 +47,18 @@ export class TavilyExternalResearchProvider implements ExternalResearchProvider 
     this.http = new HttpExternalResearchProvider(this.officialDomain);
   }
 
-  async search(input: { query: string; limit: number }): Promise<DiscoveredSource[]> {
+  async search(input: { query: string; limit: number; publishedAfter?: string }): Promise<DiscoveredSource[]> {
+    countResearch("searches");
     const started = Date.now();
     const limits = getExternalResearchLimits();
     const limit = Math.min(Math.max(1, input.limit), limits.maxResultsPerQuery);
     try {
-      const payload = await this.searchTavily(input.query, limit);
+      const payload = await this.searchTavily(input.query, limit, input.publishedAfter);
       const mapped = mapTavilySearchResults(payload, this.officialDomain);
       logProvider({ status: "ok", resultCount: mapped.length, latencyMs: Date.now() - started });
       return mapped;
     } catch (error) {
+      countResearch("searchFailures");
       const code = error instanceof TavilyProviderError ? error.code : "TAVILY_PROVIDER_ERROR";
       logProvider({ status: code, resultCount: 0, latencyMs: Date.now() - started });
       throw error instanceof TavilyProviderError
@@ -72,7 +75,7 @@ export class TavilyExternalResearchProvider implements ExternalResearchProvider 
     return this.http.fetchDocument(url);
   }
 
-  private async searchTavily(rawQuery: string, limit: number): Promise<TavilySearchHit[]> {
+  private async searchTavily(rawQuery: string, limit: number, publishedAfter?: string): Promise<TavilySearchHit[]> {
     const apiKey = this.apiKey;
     if (!apiKey) {
       throw new TavilyProviderError("TAVILY_AUTH_FAILED", "Tavily API key is not configured.");
@@ -87,17 +90,20 @@ export class TavilyExternalResearchProvider implements ExternalResearchProvider 
       include_raw_content: false,
       include_images: false,
     };
+    if (publishedAfter) payload.start_date = publishedAfter;
     if (includeDomains.length > 0) payload.include_domains = includeDomains;
     const body = JSON.stringify(payload);
 
     let lastError: TavilyProviderError | null = null;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+      researchSignal()?.throwIfAborted();
+      if (attempt > 1) countResearch("searchRetries");
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
         const response = await this.fetchImpl(TAVILY_SEARCH_ENDPOINT, {
           method: "POST",
-          signal: controller.signal,
+          signal: researchSignal() ? AbortSignal.any([controller.signal, researchSignal()!]) : controller.signal,
           headers: {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
@@ -129,8 +135,9 @@ export class TavilyExternalResearchProvider implements ExternalResearchProvider 
         if (!response.ok) {
           throw new TavilyProviderError("TAVILY_PROVIDER_ERROR", "Tavily request failed.");
         }
-        return parseTavilyResults(await response.text());
+        return parseTavilyResults(await abortable(response.text(), researchSignal() ? AbortSignal.any([controller.signal, researchSignal()!]) : controller.signal));
       } catch (error) {
+        researchSignal()?.throwIfAborted();
         if (error instanceof TavilyProviderError) throw error;
         if (isTimeoutError(error)) {
           lastError = new TavilyProviderError("TAVILY_TIMEOUT", "Tavily request timed out.");

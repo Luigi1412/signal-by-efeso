@@ -21,7 +21,7 @@ const NEWS_HOSTS = new Set([
   "cnbc.com",
 ]);
 
-const REGULATOR_HOSTS = [/sec\.gov$/, /cvm\.gov\.br$/, /b3\.com\.br$/, /gov\.br$/, /europa\.eu$/];
+const REGULATOR_HOSTS = [/(?:^|\.)sec\.gov$/, /(?:^|\.)cvm\.gov\.br$/, /(?:^|\.)b3\.com\.br$/, /(?:^|\.)gov\.br$/, /(?:^|\.)europa\.eu$/];
 
 export interface TavilySearchHit {
   url?: unknown;
@@ -62,7 +62,7 @@ export function parsePublishedAt(value: unknown): string | null {
   const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
   if (!match?.[1]) return null;
   const stamp = new Date(`${match[1]}T00:00:00.000Z`);
-  if (Number.isNaN(stamp.getTime())) return null;
+  if (Number.isNaN(stamp.getTime()) || stamp.toISOString().slice(0,10) !== match[1]) return null;
   return match[1];
 }
 
@@ -103,7 +103,7 @@ export function classifySource(
     if (/annual[- ]?report|relatorio-anual|20-f|10-k|\.pdf/.test(haystack) && /annual|relat[oó]rio|20-f|10-k/.test(haystack)) {
       return { sourceType: "annual_report", sourceTier: 1 };
     }
-    if (/earnings|quarterly[- ]?result|resultados|q[1-4][-/ ]?20|full[- ]?year|interim/.test(haystack)) {
+    if (/earnings|quarterly[- ]?result|resultados|financial[-_ ]?results|\bresults\b|q[1-4][-/ ]?20|full[- ]?year|interim/.test(haystack)) {
       return { sourceType: "earnings_release", sourceTier: 1 };
     }
     if (/press[- ]?release|newsroom|media-center|sala-de-imprensa|comunicado|comunicati/.test(haystack)) {

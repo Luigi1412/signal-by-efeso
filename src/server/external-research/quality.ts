@@ -1,4 +1,4 @@
-import { isSubdomainOrEqual, normalizeUrl, registrableDomain } from "./normalize";
+import { isSubdomainOrEqual, normalizeUrl } from "./normalize";
 import { isEcommercePath, isSocialHost } from "./source-noise";
 import type { AssessedSource, DiscoveredSource, SourceQuality } from "./types";
 
@@ -61,6 +61,7 @@ export function assessSource(
   officialDomain: string | null,
   asOf = new Date(),
   companyName?: string | null,
+  horizonMonths = 24,
 ): AssessedSource {
   const host = safeHost(source.url);
   const path = safePath(source.url);
@@ -68,7 +69,7 @@ export function assessSource(
   const impersonator = officialDomain ? host.includes(officialDomain.replace(/\./g, "-")) && !official : false;
   const named = mentionsCompany(`${source.title ?? ""} ${source.url} ${source.publisher}`, companyName);
   const quality = deriveQuality(source, host, official, impersonator);
-  const stale = isOutsideHorizon(source.publishedAt, asOf, 24) && !isInstitutionalKeep(source.sourceType);
+  const stale = isOutsideHorizon(source.publishedAt, asOf, horizonMonths) && !isInstitutionalKeep(source.sourceType);
 
   let accepted = quality !== "weak" && !impersonator;
   let rejectionReason: string | null = null;
@@ -92,7 +93,7 @@ export function assessSource(
     // Filings/news without the company name in title/URL drift to unrelated issuers (e.g. Azul CVM for Suvinil).
     accepted = false;
     rejectionReason = "off_topic_company";
-  } else if (stale && source.sourceTier >= 3) {
+  } else if (stale) {
     accepted = false;
     rejectionReason = "outside_horizon";
   }
@@ -119,9 +120,9 @@ function deriveQuality(
   }
   if (official && source.sourceTier <= 2) return "primary";
   if (source.sourceType === "filing" || source.sourceType === "regulator" || FILING_HOST.test(host)) {
-    return "authoritative_secondary";
+    return "primary"; // Original regulatory/government disclosure, not a news interpretation.
   }
-  if (AUTHORITATIVE_NEWS.has(registrableDomain(host))) return "secondary";
+  if ([...AUTHORITATIVE_NEWS].some((known) => isSubdomainOrEqual(host, known))) return "secondary";
   if (WEAK_HINTS.some((pattern) => pattern.test(host) || pattern.test(source.publisher.toLowerCase()))) return "weak";
   if (source.sourceTier >= 4) return "weak";
   return "secondary";
@@ -152,7 +153,7 @@ function isBareHomepageShell(
   if (/^(?:ir|ri)\./i.test(host)) return false;
   // Corporate marketing homepage is usually thin — prefer /investors, /newsroom, PDFs.
   if (official) return true;
-  if (AUTHORITATIVE_NEWS.has(registrableDomain(host))) return true;
+  if ([...AUTHORITATIVE_NEWS].some((known) => isSubdomainOrEqual(host, known))) return true;
   if (source.sourceType === "news") return true;
   return false;
 }

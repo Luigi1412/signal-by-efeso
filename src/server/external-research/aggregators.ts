@@ -51,7 +51,7 @@ export function publisherAuthorityClass(
   }
   if (/(?:^|\.)(?:sec\.gov|cvm\.gov\.br|b3\.com\.br)$/i.test(host)) return "regulatory";
   if (isAggregatorHost(host)) return "aggregator";
-  if (REPUTABLE_NEWS.has(registrableDomain(host))) return "reputable_news";
+  if ([...REPUTABLE_NEWS].some((known) => host === known || host.endsWith(`.${known}`))) return "reputable_news";
   return "unknown";
 }
 

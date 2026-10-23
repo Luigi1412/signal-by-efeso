@@ -5,7 +5,7 @@ import { insertContentBlocks } from "@/server/extraction/pipeline-persistence";
 import { parseControlledDocument } from "@/server/parsers";
 import type { ParsedContentBlock } from "@/server/parsers/types";
 import { contentHashForCapture } from "@/server/storage/content-hash";
-import { getExternalResearchLimits } from "./config";
+import { getExternalResearchLimits, snapshotFreshnessCutoff } from "./config";
 import { extractHtmlText } from "./html";
 import { mapExternalTypeToSourceType, mapQualityToSourceTier } from "./quality";
 import { hostnameOf } from "./normalize";
@@ -42,12 +42,16 @@ export async function ingestFetchedDocument(input: {
   let sourceId: string | null = null;
   const existingSource = await db
     .from("sources")
-    .select("id")
+    .select("id,access_type,source_type")
     .eq("workspace_id", input.workspaceId)
     .eq("canonical_url", canonical)
     .maybeSingle();
+  if (existingSource.error) throw existingSource.error;
   if (existingSource.data && typeof existingSource.data === "object" && "id" in existingSource.data) {
+    if (existingSource.data.access_type !== "public" || existingSource.data.source_type === "internal_efeso") throw new Error("PRIVATE_SOURCE_NOT_ELIGIBLE_FOR_PUBLIC_RESEARCH");
     sourceId = String((existingSource.data as { id: string }).id);
+    const updated = await db.from("sources").update({source_type:sourceType,source_tier:sourceTier,is_primary_source:input.candidate.source_quality==="primary",publisher_name:input.candidate.publisher}).eq("workspace_id",input.workspaceId).eq("id",sourceId);
+    if(updated.error) throw updated.error;
   } else {
     const created = await db
       .from("sources")
@@ -67,7 +71,7 @@ export async function ingestFetchedDocument(input: {
     sourceId = String((created.data as { id: string }).id);
   }
 
-  await db.from("research_run_sources").upsert(
+  const attached = await db.from("research_run_sources").upsert(
     {
       workspace_id: input.workspaceId,
       research_run_id: input.legacyResearchRunId,
@@ -78,6 +82,7 @@ export async function ingestFetchedDocument(input: {
     },
     { onConflict: "research_run_id,source_id" },
   );
+  if(attached.error) throw attached.error;
 
   const html = input.document.mimeType.includes("html")
     ? extractHtmlText(new TextDecoder().decode(input.document.bytes))
@@ -182,7 +187,10 @@ export async function findReusableSnapshot(
     .select("id")
     .eq("workspace_id", workspaceId)
     .eq("canonical_url", canonicalUrl)
+    .eq("access_type", "public")
+    .neq("source_type", "internal_efeso")
     .maybeSingle();
+  if(existingSource.error) throw existingSource.error;
   if (!existingSource.data || typeof existingSource.data !== "object" || !("id" in existingSource.data)) {
     return null;
   }
@@ -192,14 +200,18 @@ export async function findReusableSnapshot(
     .select("id")
     .eq("workspace_id", workspaceId)
     .eq("source_id", sourceId)
+    .gte("created_at", snapshotFreshnessCutoff())
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if(existingSnap.error) throw existingSnap.error;
   if (!existingSnap.data || typeof existingSnap.data !== "object" || !("id" in existingSnap.data)) {
     return null;
   }
   return { sourceId, snapshotId: String((existingSnap.data as { id: string }).id) };
 }
+
+
 
 export async function attachSnapshotToLegacyRun(input: {
   workspaceId: string;

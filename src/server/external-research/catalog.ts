@@ -99,6 +99,9 @@ export const PUBLIC_COMPANY_CATALOG: CompanyIdentity[] = [
   },
   {
     canonicalName: "EssilorLuxottica",
+    entityKind: "parent",
+    relationshipToQuery: "brand_of",
+    brands: ["Luxottica", "Essilor"],
     officialDomain: "essilorluxottica.com",
     headquartersCountry: "FR",
     industry: "Eyewear e óptica",

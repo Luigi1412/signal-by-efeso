@@ -1,4 +1,4 @@
-import { hostnameOf, isSubdomainOrEqual, registrableDomain } from "./normalize";
+import { hostnameOf, isSubdomainOrEqual } from "./normalize";
 import { isAggregatorHost } from "./aggregators";
 import { isRejectedNoiseUrl } from "./source-noise";
 import type { AssessedSource } from "./types";
@@ -47,7 +47,7 @@ export function sourcePriorityBand(source: AssessedSource, officialDomain?: stri
   const host = hostnameOf(source.canonicalUrl || source.url) ?? "";
   const path = safePath(source.canonicalUrl || source.url);
   const haystack = `${host} ${path} ${source.title ?? ""}`;
-  const official = officialDomain ? isSubdomainOrEqual(host, officialDomain) : false;
+  const official = Boolean((officialDomain && isSubdomainOrEqual(host, officialDomain)) || source.sourceQuality === "primary");
 
   const isReportType =
     source.sourceType === "earnings_release" ||
@@ -71,7 +71,7 @@ export function sourcePriorityBand(source: AssessedSource, officialDomain?: stri
     return "regulatory_filing";
   }
   if (official) return isNewsroom ? "official_newsroom" : "official_ir";
-  if (REPUTABLE_NEWS.has(registrableDomain(host))) return "reputable_financial_news";
+  if ([...REPUTABLE_NEWS].some((known) => isSubdomainOrEqual(host, known))) return "reputable_financial_news";
   return "secondary";
 }
 
@@ -83,10 +83,11 @@ export function rankSourcesForInitialPass(
   return [...sources].sort((left, right) => {
     const leftSubstance = urlSubstanceScore(left.canonicalUrl || left.url, left.title, officialDomain, companyName);
     const rightSubstance = urlSubstanceScore(right.canonicalUrl || right.url, right.title, officialDomain, companyName);
-    // Large substance gaps (e.g. recent operational disclosure vs stale earnings title) outweigh band.
-    if (Math.abs(leftSubstance - rightSubstance) >= 40) return rightSubstance - leftSubstance;
-    const bandDelta = BAND_RANK[sourcePriorityBand(left, officialDomain)] - BAND_RANK[sourcePriorityBand(right, officialDomain)];
-    if (bandDelta !== 0) return bandDelta;
+    const leftShell = isListingOrShell(left.canonicalUrl || left.url,left.title??"") ? 200 : 0;
+    const rightShell = isListingOrShell(right.canonicalUrl || right.url,right.title??"") ? 200 : 0;
+    const leftRank = -100 * BAND_RANK[sourcePriorityBand(left,officialDomain)] + leftSubstance - leftShell;
+    const rightRank = -100 * BAND_RANK[sourcePriorityBand(right,officialDomain)] + rightSubstance - rightShell;
+    if (leftRank !== rightRank) return rightRank - leftRank;
     const qualityDelta = qualityRank(left.sourceQuality) - qualityRank(right.sourceQuality);
     if (qualityDelta !== 0) return qualityDelta;
     const substanceDelta = rightSubstance - leftSubstance;
@@ -138,7 +139,7 @@ export function urlSubstanceScore(
   const hay = `${normalizedUrl} ${normalizedTitle}`;
   const path = normalizedUrl;
   const officialHost = officialDomain?.replace(/^www\./, "").toLowerCase() ?? null;
-  const isOfficial = Boolean(officialHost && normalizedUrl.includes(officialHost));
+  const isOfficial = Boolean(officialHost && isSubdomainOrEqual(hostnameOf(url) ?? "", officialHost));
   const named = mentionsCompany(hay, companyName);
   let score = 0;
   if (/\.pdf(?:$|\?)/i.test(normalizedUrl)) score += 50;
@@ -156,8 +157,8 @@ export function urlSubstanceScore(
   if (/edgar|20-f|6-k|10-k/.test(hay)) score += 35;
   const year = inferTitleYear(title) ?? inferUrlYear(normalizedUrl);
   if (year !== null) {
-    if (year >= 2025) score += 25;
-    else if (year <= 2023) score -= 35;
+    if (year >= new Date().getUTCFullYear() - 1 && year <= new Date().getUTCFullYear()) score += 25;
+    else if (year < new Date().getUTCFullYear() - 2) score -= 35;
   }
   if (isListingOrShell(normalizedUrl, normalizedTitle)) score -= 40;
   if (isRejectedNoiseUrl(normalizedUrl)) score -= 80;
@@ -233,6 +234,7 @@ function inferUrlYear(url: string): number | null {
 function isListingOrShell(url: string, title: string): boolean {
   const hay = `${url} ${title}`.toLowerCase();
   if (/investor-faqs|investor-contacts|ir-agenda|ir contact/.test(hay)) return true;
+  if (/\/(?:investors|investor-relations|newsroom|press-releases)\/?(?:\?.*)?$/.test(url)) return true;
   if (/central-de-resultados|results-center/.test(hay) && /default\.aspx|\/$/.test(url)) return true;
   if (/default\.aspx/.test(url) && /home|faq|contact|agenda/.test(hay)) return true;
   if (/relatorios-de-sustentabilidade\/?$/.test(url)) return true;
