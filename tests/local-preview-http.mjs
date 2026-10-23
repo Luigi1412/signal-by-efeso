@@ -40,6 +40,15 @@ try {
     const { response, html } = await read(path);
     assert.equal(response.status, 200, path);
     assert.ok(html.includes("PREVIEW LOCAL"), path);
+    if (path === "/preview/research/new") {
+      assert.ok(html.includes("Qual empresa você quer entender?"));
+      assert.ok(html.includes("Opções avançadas"));
+      assert.ok(!html.includes('id="instructions"'), "member search must not require a research brief");
+    }
+    if (path.includes("phase=generating_intelligence")) {
+      assert.ok(html.includes('role="status"'));
+      assert.ok(!html.includes('aria-valuenow'), "phase progress is not a measured percentage");
+    }
   }
   for (const [slug, material] of [["horizonte-industrial", true], ["verde-papel", false], ["oficina-delta", false]]) {
     const { response, html } = await read(`/preview/companies/${slug}`);
@@ -48,6 +57,20 @@ try {
     assert.equal(html.includes('id="report-movimentos"'), slug !== "oficina-delta");
     assert.ok(html.includes('href="/preview/companies"'));
     assert.ok(html.includes("fictícios"));
+    if (slug === "horizonte-industrial") {
+      assert.ok(html.includes("Por que isso importa"));
+      assert.ok(html.includes("Oportunidade a validar"));
+      assert.ok(html.includes('id="report-evidencias"'));
+      assert.ok(html.includes("Ver evidência original"));
+      assert.ok(html.includes("evidências deste movimento"));
+    } else if (slug === "verde-papel") {
+      assert.ok(html.includes("Por que não há sinal"));
+      assert.ok(!html.includes("Oportunidade a validar"));
+    } else {
+      assert.ok(html.includes("O que faltou"));
+      assert.ok(!html.includes("Por que não há sinal"));
+      assert.ok(!html.includes("fatos validados</span>"), "insufficient report must not show a zero KPI strip");
+    }
   }
   for (const headers of [{ host: "public.example" }, { "x-forwarded-host": "public.example" }, { "x-forwarded-for": "203.0.113.8" }]) {
     const { response } = await read("/preview", headers);
@@ -59,6 +82,9 @@ try {
   assert.equal(externalRequests, 0, "preview must not connect to configured external services");
   console.log("PASS development HTTP: companies, form, resolution, phases, three report states, account, admin, source excerpts");
   console.log("PASS isolation: normal routes remain protected, non-local requests denied, zero requests to configured Supabase/Ollama");
+} catch (error) {
+  console.error(output.slice(-4000));
+  throw error;
 } finally {
   child.kill("SIGTERM");
   tripwire.close();
