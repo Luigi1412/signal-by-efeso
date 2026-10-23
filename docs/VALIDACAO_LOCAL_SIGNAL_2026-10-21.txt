@@ -1,0 +1,56 @@
+SIGNAL — evidência de validação local — 21/10/2026
+Comando: npm run release:check
+Resultado global: reprovado; configuração/integração externa ausentes.
+
+OK    version 1.0.0
+OK    non-production DEMO_MODE=(unset)
+FAIL  env NEXT_PUBLIC_SUPABASE_URL missing
+FAIL  env NEXT_PUBLIC_SUPABASE_ANON_KEY missing
+FAIL  env SUPABASE_SERVICE_ROLE_KEY missing
+FAIL  env ALLOWED_EMAIL_DOMAINS missing
+FAIL  env TAVILY_API_KEY missing
+FAIL  EXTERNAL BLOCKER: language model configuration missing
+FAIL  EXTERNAL BLOCKER: EXTERNAL_RESEARCH_PROVIDER must be tavily
+OK    research worker enabled (npm run worker:research)
+OK    knowledge pack preserved (195 objects)
+OK    migrations include worker lock
+OK    private EFESO sources not tracked
+OK    .env.local not tracked
+OK    home page is persist-first (no silent mock metrics)
+OK    primary navigation excludes Radar
+OK    research worker script present
+OK    route types
+OK    TypeScript
+OK    ESLint
+ℹ tests 274
+ℹ pass 274
+ℹ fail 0
+ℹ skipped 0
+ℹ duration_ms 8965.728611
+OK    all deterministic unit tests
+PASS 51 complete migrations on PostgreSQL
+PASS invited activation and immediate disabled revocation with unchanged JWT
+PASS exclusive/global claim, stale-write fencing, ownership token, renewal, immediate next phase and cancellation
+PASS private research sources, snapshots and fragments cannot be read by members
+PASS restricted knowledge is absent from fit/component/opportunity payloads under authenticated RLS
+NOTE PostgreSQL WASM serializes connections: a multi-process live race and Supabase pgTAP remain separate acceptance checks.
+OK    local PostgreSQL migrations/RLS/ownership
+FAIL  EXTERNAL BLOCKER: Supabase pgTAP/live integration unavailable (Docker/local Supabase required)
+OK    Next.js build
+PASS production HTTP: login, protected home/companies and callback redirect containment
+OK    production HTTP smoke
+release:check failed
+
+Pack governado idêntico ao HEAD de base. SHA256: 4be548a7cd063f934db18d7043bf6bd6b5c3c3a27b4990b96770eaec167b406c
+
+Benchmark: EssilorLuxottica essilorluxottica.com
+BLOCKED_EXTERNAL_CONFIGURATION — realRunsStarted: 0
+Supabase URL/service-role, Tavily, modelo Ollama e identidade/workspace de benchmark ausentes.
+Não houve substituição por demonstração.
+
+Browser: Chromium não instalado; tentativa de download falhou (arquivo zip inválido/truncado).
+Smoke HTTP executado com processo Next real, sem serviços falsos.
+Auth Supabase/member/admin/disabled no browser permanece pendente.
+RLS local executado em PostgreSQL WASM, com fixtures isolados; não substitui PostgREST nem corrida multiprocesso.
+
+SIGNAL PRODUCT QUALITY GATE FAILED — BLOCKERS REMAIN
