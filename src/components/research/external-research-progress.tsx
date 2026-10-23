@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { researchOutcomeMemberCopy } from "@/server/product/research-outcome";
 import { useEffect, useState, useTransition } from "react";
 import { ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -48,12 +49,13 @@ function phaseDetail(view: ResearchView, status: (typeof RESEARCH_PHASES)[number
   return null;
 }
 
-function sourceStatusLabel(status: string, rejectionReason: string | null): string {
+function sourceStatusLabel(status: string): string {
   if (status === "rejected") {
-    return rejectionReason ? `Descartada — ${rejectionReason}` : "Descartada";
+    return "Descartada";
   }
-  if (status === "accepted" || status === "ingested" || status === "processed") return "Retida";
-  return status;
+  if (status === "fetched" || status === "ingested" || status === "processed") return "Consultada";
+  if (status === "accepted") return "Selecionada";
+  return ({discovered:"Encontrada",failed:"Falha de acesso",unavailable:"Indisponível"} as Record<string,string>)[status] ?? "Em avaliação";
 }
 
 export function ExternalResearchProgress({ initial }: { initial: ResearchView }) {
@@ -69,9 +71,10 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
       startTransition(async () => {
         const result = await tickExternalResearchAction(view.id);
         if (result.ok) setView(result.run);
-        else setTickKey((value) => value + 1);
+        setTickKey((value) => value + 1);
+
       });
-    }, 700);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [view.id, view.status, tickKey]);
 
@@ -82,7 +85,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
     ? 1
     : failed
       ? Math.max(currentIndex, 0) / RESEARCH_PHASES.length
-      : (Math.max(currentIndex, 0) + 0.35) / RESEARCH_PHASES.length;
+      : Math.max(currentIndex, 0) / RESEARCH_PHASES.length;
 
   return (
     <div className="grid gap-10 lg:grid-cols-[1fr_280px] lg:gap-14">
@@ -90,7 +93,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
         <div className="eyebrow mb-3">{ui.externalResearch.eyebrow}</div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]">
           {done
-            ? ui.externalResearch.completedHeadline
+            ? (view.outcome ? researchOutcomeMemberCopy(view.outcome).title : ui.externalResearch.completedHeadline)
             : failed
               ? ui.externalResearch.failed
               : ui.externalResearch.headline}
@@ -99,7 +102,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
           {done
             ? view.status === "partial"
               ? (view.failureReason ?? ui.externalResearch.partialMessage)
-              : ui.externalResearch.completedSupporting
+              : (view.outcome ? researchOutcomeMemberCopy(view.outcome).body : ui.externalResearch.completedSupporting)
             : failed
               ? (view.failureReason ?? ui.externalResearch.failed)
               : (view.memberProgress ?? ui.externalResearch.supporting)}
@@ -302,7 +305,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
                     {source.title || source.publisher}
                   </a>
                   <span className="mt-0.5 block">
-                    {[source.publisher, source.publishedAt, sourceStatusLabel(source.status, source.rejectionReason)]
+                    {[source.publisher, source.publishedAt, sourceStatusLabel(source.status)]
                       .filter(Boolean)
                       .join(" · ")}
                   </span>

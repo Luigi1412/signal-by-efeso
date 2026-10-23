@@ -1,9 +1,9 @@
 import "server-only";
+import { loadResearchAssessment } from "@/server/product/research-assessment";
 import { isDemoMode, isSupabaseConfigured } from "@/lib/supabase/env";
 import { PersistenceUnavailableError } from "@/server/persistence-error";
 import { listResearchRunsForCompany, listWorkspaceCompanies } from "@/server/external-research/persistence";
 import {
-  deriveCompanyResearchOutcome,
   memberOutcomeListLabel,
   type ResearchOutcome,
 } from "@/server/product/research-outcome";
@@ -11,7 +11,6 @@ import { requireAuthUserId } from "@/server/session";
 import * as workspaceRepository from "@/server/repositories/workspace-repository";
 import { listActiveOpportunities } from "@/server/opportunities/persistence";
 import { listSignalsForWorkspace } from "@/server/signals/persistence";
-import { getTraceabilityForCompany } from "@/server/services/evidence-foundation-service";
 
 function isDemoOrigin(metadata: unknown): boolean {
   if (!metadata || typeof metadata !== "object") return false;
@@ -77,40 +76,10 @@ export async function listCompanyHistory(): Promise<CompanyHistoryRow[]> {
       if (!hasRealResearch && realSignals.length === 0 && realOpportunities.length === 0 && runs.length === 0) continue;
     }
 
-    const visibleSignals = allowDemo ? companySignals : realSignals;
     const visibleOpportunities = allowDemo ? companyOpportunities : realOpportunities;
 
-    let activeClaimCount = 0;
-    try {
-      const traces = await getTraceabilityForCompany(company.id);
-      activeClaimCount = traces.filter(
-        (trace) =>
-          trace.claim.claim_status === "active" &&
-          (trace.claim.verification_status === "supported" ||
-            trace.claim.verification_status === "corroborated" ||
-            trace.claim.claim_type === "fact"),
-      ).length;
-    } catch {
-      activeClaimCount = 0;
-    }
-
-    const insufficient =
-      latestRun?.resolution_payload &&
-      typeof latestRun.resolution_payload === "object" &&
-      (latestRun.resolution_payload as { insufficient_evidence_for_signal?: boolean }).insufficient_evidence_for_signal ===
-        true;
-
-    const outcome =
-      latestRun || visibleSignals.length > 0 || activeClaimCount > 0
-        ? deriveCompanyResearchOutcome({
-            signalCount: visibleSignals.length,
-            activeClaimCount,
-            failureCode: latestRun?.failure_code ?? null,
-            runStatus: latestRun?.status ?? (visibleSignals.length > 0 ? "completed" : null),
-            insufficientEvidenceForSignal: Boolean(insufficient),
-          })
-        : null;
-
+    const assessment = latestRun ? await loadResearchAssessment(latestRun) : null;
+    const outcome = assessment?.researchOutcome ?? null;
     rows.push({
       companyId: company.id,
       slug: company.slug,
@@ -123,8 +92,8 @@ export async function listCompanyHistory(): Promise<CompanyHistoryRow[]> {
       outcome,
       outcomeLabel: memberOutcomeListLabel(outcome, latestRun?.status ?? null),
       runStatus: latestRun?.status ?? null,
-      signalCount: visibleSignals.length,
-      opportunityCount: visibleOpportunities.length,
+      signalCount: assessment?.qualifiedSignalCount ?? 0,
+      opportunityCount: visibleOpportunities.filter(opportunity=>Array.isArray(latestRun?.resolution_payload.supported_opportunity_ids) && latestRun.resolution_payload.supported_opportunity_ids.includes(opportunity.id)).length,
       demoOnly,
     });
   }

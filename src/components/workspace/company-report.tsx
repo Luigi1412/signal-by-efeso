@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ui } from "@/i18n";
+import { memberResearchStatusLabel } from "@/server/product/research-outcome";
 import { routes } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import type { CompanyBriefing } from "@/server/services/company-briefing-service";
@@ -40,7 +41,7 @@ export function CompanyReport({ slug, briefing, sources, history, demoMode = fal
     if (!compact && (briefing.meaningHeadline || briefing.meaningSummary || briefing.workingHypotheses.length > 0)) {
       items.push({ id: "leitura", number: "03", title: "O que isso pode significar" });
     }
-    items.push({ id: "efeso", number: String(items.length + 1).padStart(2, "0"), title: "Aderências EFESO" });
+    if (!compact && briefing.signals.length > 0) items.push({ id: "efeso", number: String(items.length + 1).padStart(2, "0"), title: "Aderências EFESO" });
     items.push({ id: "fontes", number: String(items.length + 1).padStart(2, "0"), title: "Fontes e limitações" });
     return items;
   }, [compact, briefing]);
@@ -63,9 +64,9 @@ export function CompanyReport({ slug, briefing, sources, history, demoMode = fal
           <IdentityBlock briefing={briefing} />
           {briefing.executionStatus ? (
             <p className="mt-3 text-xs text-muted-foreground">
-              Execução: <span className="font-medium text-foreground">{briefing.executionStatus.replaceAll("_", " ")}</span>
+              Execução: <span className="font-medium text-foreground">{memberResearchStatusLabel(briefing.executionStatus === "completed_with_warnings" ? "partial" : briefing.executionStatus, briefing.outcome)}</span>
               {" · "}
-              Resultado: <span className="font-medium text-foreground">{briefing.outcome}</span>
+              Resultado: <span className="font-medium text-foreground">{briefing.outcomeTitle}</span>
             </p>
           ) : null}
         </header>
@@ -91,16 +92,6 @@ export function CompanyReport({ slug, briefing, sources, history, demoMode = fal
               <p className="max-w-[62ch] text-[15px] leading-[1.7] text-foreground/90">
                 {briefing.reasons[0] ?? briefing.outcomeBody}
               </p>
-              {briefing.signals.length === 0 ? (
-                <p className="max-w-[62ch] text-sm text-muted-foreground">
-                  Nenhum sinal foi promovido nesta execução.
-                </p>
-              ) : null}
-              {briefing.opportunities.length === 0 ? (
-                <p className="max-w-[62ch] text-sm text-muted-foreground">
-                  Nenhuma oportunidade EFESO sustentada.
-                </p>
-              ) : null}
               {compact ? (
                 <div className="rounded-lg border border-hypothesis-border/50 bg-hypothesis-muted/20 px-4 py-3">
                   <p className="text-sm font-medium text-foreground">Por que não concluímos</p>
@@ -136,8 +127,10 @@ export function CompanyReport({ slug, briefing, sources, history, demoMode = fal
                     <div key={fact.id}>
                       <p className="text-[15px] leading-relaxed text-foreground">{fact.statement}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {fact.period} · {fact.sourceLabel} · {fact.modality}
+                        {fact.period} · {fact.sourceUrl ? <a href={fact.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">{fact.sourceLabel}</a> : fact.sourceLabel} · {fact.modality}
+                        {fact.sourceDate ? ` · Publicação: ${fact.sourceDate}` : ""}
                       </p>
+                      {fact.excerpt ? <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Ver evidência original</summary><blockquote className="mt-2 border-l pl-3">{fact.excerpt}</blockquote></details> : null}
                     </div>
                   ))}
                 </div>
@@ -177,13 +170,16 @@ export function CompanyReport({ slug, briefing, sources, history, demoMode = fal
             </Chapter>
           ) : null}
 
+          {!compact && briefing.signals.length > 0 ? (
           <Chapter id="efeso" number={sections.find((s) => s.id === "efeso")?.number ?? "04"} title="Possíveis aderências EFESO">
             <p className="max-w-[62ch] text-sm leading-relaxed text-muted-foreground">{briefing.efesoFitMessage}</p>
             {briefing.topFit ? (
               <p className="mt-3 text-sm text-foreground">
-                <span className="font-medium">{briefing.topFit.name}</span> — {briefing.topFit.level}
+                <span className="font-medium">{briefing.topFit.name}</span> — {({high:"alta",medium:"média",low:"baixa"} as Record<string,string>)[briefing.topFit.level] ?? "em avaliação"}
               </p>
             ) : null}
+            {briefing.topFit?.reason ? <p className="mt-2 text-sm text-muted-foreground">{briefing.topFit.reason}</p> : null}
+            {briefing.fits[0]?.operationalChain ? <p className="mt-2 text-sm text-muted-foreground">Hipótese: {briefing.fits[0].operationalChain.possibleNeed} Incerteza: {briefing.fits[0].operationalChain.uncertainty}</p> : null}
             {briefing.opportunities.length > 0 ? (
               <div className="mt-4 space-y-3">
                 {briefing.opportunities.map((opportunity) => (
@@ -192,11 +188,15 @@ export function CompanyReport({ slug, briefing, sources, history, demoMode = fal
                     {opportunity.summary ? (
                       <p className="mt-1 text-sm text-muted-foreground">{opportunity.summary}</p>
                     ) : null}
+                    <dl className="mt-3 space-y-2 text-sm text-muted-foreground">
+                      {[["Implicação operacional",opportunity.operationalImplication],["Necessidade potencial",opportunity.potentialNeed],["Capacidade EFESO",opportunity.primaryCapability],["Incerteza",opportunity.uncertaintyStatement],["O que validar",opportunity.clientValidation],["Próximo passo",opportunity.nextStep]].filter(([,value])=>Boolean(value)).map(([label,value])=>(<div key={label}><dt className="font-medium text-foreground">{label}</dt><dd>{value}</dd></div>))}
+                    </dl>
                   </div>
                 ))}
               </div>
             ) : null}
           </Chapter>
+          ) : null}
 
           <Chapter
             id="fontes"
@@ -233,10 +233,10 @@ export function CompanyReport({ slug, briefing, sources, history, demoMode = fal
                           {source.publisher || "—"}
                         </TableCell>
                         <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                          {source.source_type.replaceAll("_", " ")}
+                          {({official_page:"Página oficial",press_release:"Comunicado",annual_report:"Relatório anual",sustainability_report:"Relatório de sustentabilidade",earnings_release:"Resultados financeiros",filing:"Documento regulatório",regulator:"Órgão regulador",news:"Notícia",other:"Outra fonte"})[source.source_type]}
                         </TableCell>
                         <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                          {(source.source_quality ?? "—").replaceAll("_", " ")}
+                          {source.source_quality ? ({primary:"Primária",authoritative_secondary:"Secundária de referência",secondary:"Secundária",weak:"Limitada"})[source.source_quality] : "—"}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -282,7 +282,7 @@ export function CompanyReport({ slug, briefing, sources, history, demoMode = fal
             {history.length > 0 ? (
               <p className="mt-6 text-sm">
                 <Link href={routes.research(history[0]!.id)} className="underline-offset-4 hover:underline">
-                  Abrir run mais recente
+                  Ver pesquisa mais recente
                 </Link>
               </p>
             ) : null}

@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 function loginMethodLabel(provider: string | null): string {
   if (!provider) return "—";
   if (provider === "google") return "Google";
-  if (provider === "email") return "Email";
+  if (provider === "email") return "E-mail";
   return provider;
 }
 
@@ -21,7 +21,7 @@ export default async function AccountPage() {
   const rows: { label: string; value: string }[] = [
     { label: ui.accountPage.name, value: user.name || "—" },
     { label: ui.accountPage.email, value: access.email || "—" },
-    { label: ui.accountPage.role, value: access.role },
+    { label: ui.accountPage.role, value: ({member:"Membro",consultant:"Consultor",manager:"Gerente",partner:"Sócio",admin:"Administrador"} as Record<string,string>)[access.role] ?? access.role },
     { label: ui.accountPage.organization, value: user.organization || "—" },
     { label: ui.accountPage.domain, value: access.emailDomain || "—" },
     {

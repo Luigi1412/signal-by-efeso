@@ -41,7 +41,7 @@ export function NewResearchForm() {
   const [pending, startTransition] = useTransition();
   const [companyName, setCompanyName] = useState("");
   const [website, setWebsite] = useState("");
-  const [country, setCountry] = useState("Brasil");
+  const [country, setCountry] = useState("");
   const [instructions, setInstructions] = useState("");
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +59,7 @@ export function NewResearchForm() {
       const result = await previewExternalResearchAction({
         query: companyName.trim(),
         country: normalizeCountry(country),
+        selectedDomain: website.trim() ? normalizeDomain(website) : undefined,
       });
       if (!result.ok) {
         setError(result.error);
@@ -78,11 +79,11 @@ export function NewResearchForm() {
       setError(null);
       const domain = extra.selectedDomain ?? (website.trim() ? normalizeDomain(website) : undefined);
       const result = await startExternalResearchAction({
-        query: extra.query ?? companyName.trim(),
+        query: companyName.trim(),
         country: normalizeCountry(country),
         existingSlug: extra.existingSlug,
         selectedDomain: domain,
-        confirmUnresolved: extra.confirmUnresolved,
+        confirmUnresolved: true,
         instructions: instructions.trim() || undefined,
       });
       if (!result.ok) {

@@ -1,5 +1,7 @@
 "use server";
 
+import { loadResearchAssessment } from "@/server/product/research-assessment";
+import type { ResearchOutcome } from "@/server/product/research-outcome";
 import { z } from "zod";
 import { AccessDeniedError, assertEfesoAccess, assertEfesoAdmin, publicAccessErrorMessage } from "@/server/access/require-efeso-access";
 import {
@@ -7,10 +9,8 @@ import {
   previewCompanyQuery,
   resolveAmbiguousRun,
   startExternalCompanyResearch,
-  tickExternalCompanyResearch,
 } from "@/server/external-research/orchestrator";
 import {
-  countPromotedPipeline,
   getResearchRun,
   listResearchEvents,
   listResearchRuns,
@@ -49,6 +49,7 @@ export async function previewExternalResearchAction(raw: unknown): Promise<Previ
       query: parsed.data.query,
       country: parsed.data.country,
       industry: parsed.data.industry,
+      selectedDomain: parsed.data.selectedDomain,
     });
     if (resolution.kind === "resolved") {
       const c = resolution.candidate;
@@ -121,7 +122,6 @@ export async function tickExternalResearchAction(runId: string): Promise<{ ok: t
   try {
     const access = await assertEfesoAccess();
     if (!z.string().uuid().safeParse(runId).success) return { ok: false, error: "Pesquisa inválida." };
-    await tickExternalCompanyResearch(access.workspaceId, runId);
     return { ok: true, run: await loadView(access.workspaceId, runId) };
   } catch (error) {
     if (error instanceof AccessDeniedError) return { ok: false, error: publicAccessErrorMessage(error) };
@@ -174,6 +174,7 @@ export async function cancelExternalResearchAction(runId: string): Promise<{ ok:
 }
 
 export type ResearchView = {
+  outcome?: ResearchOutcome | null;
   id: string;
   status: ExternalResearchRunRow["status"];
   query: string;
@@ -215,13 +216,11 @@ async function loadView(workspaceId: string, runId: string): Promise<ResearchVie
     run.resolution_payload.counts && typeof run.resolution_payload.counts === "object"
       ? (run.resolution_payload.counts as { claims: number; signals: number; opportunities: number; pendingFacts?: number; intelligence?: number })
       : null;
-  const counts =
-    run.resolved_company_id && run.analysis_id
-      ? await countPromotedPipeline(workspaceId, run.resolved_company_id, run.analysis_id)
-      : payloadCounts;
+  const counts = payloadCounts;
   const terminal = ["completed", "partial", "failed", "cancelled"].includes(run.status);
-  const claimCount = counts?.claims ?? 0;
-  const signalCount = counts?.signals ?? 0;
+  const assessment = terminal ? await loadResearchAssessment(run) : null;
+  const claimCount = assessment?.activeClaimCount ?? counts?.claims ?? 0;
+  const signalCount = assessment?.qualifiedSignalCount ?? counts?.signals ?? 0;
   const intelligenceCount = counts?.intelligence ?? 0;
   const initialAnalysisAvailable = signalCount > 0 || intelligenceCount > 0;
   const enrichmentInProgress = !terminal && (claimCount > 0 || initialAnalysisAvailable);
@@ -235,16 +234,17 @@ async function loadView(workspaceId: string, runId: string): Promise<ResearchVie
   return {
     id: run.id,
     status: run.status,
+    outcome: assessment?.researchOutcome ?? null,
     query: run.requested_query,
     failureReason: run.failure_reason,
     failureCode: run.failure_code,
-    sourceCount: run.source_count,
-    acceptedCount: run.accepted_source_count,
-    rejectedCount: run.rejected_source_count,
+    sourceCount: sources.length,
+    acceptedCount: sources.filter(s => s.snapshot_id && s.status !== "rejected" && s.status !== "failed" && s.status !== "unavailable").length,
+    rejectedCount: sources.filter(s => s.status === "rejected").length,
     unavailableCount: run.unavailable_source_count,
     companySlug: slug,
     analysisId: run.analysis_id,
-    counts,
+    counts: counts ? {...counts, claims:claimCount, signals:signalCount} : null,
     memberProgress,
     initialAnalysisAvailable,
     enrichmentInProgress,
