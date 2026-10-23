@@ -77,102 +77,17 @@ export async function activateAuthorizedMembership(input: {
   role: WorkspaceRole;
   fullName?: string;
 }): Promise<WorkspaceMembership> {
-  const admin = createAdminSupabaseClient();
-  await upsertProfile({
-    userId: input.userId,
-    fullName: input.fullName?.trim() || "EFESO Member",
-    jobTitle: input.role === "admin" ? "Administrador" : "Consultor",
-  });
-
-  const existing = await getActiveEfesoMembership(input.userId);
-  if (existing) {
-    if (existing.role !== input.role) {
-      await admin
-        .from("workspace_memberships")
-        .update({ role: input.role, status: "active", provisioned_reason: "email_allowlist" })
-        .eq("id", existing.id);
-      return { ...existing, role: input.role };
-    }
-    return existing;
-  }
-
-  const { data: workspace, error: workspaceError } = await admin
-    .from("workspaces")
-    .select("id")
-    .eq("slug", EFESO_BRAZIL_SLUG)
-    .eq("status", "active")
-    .maybeSingle();
-  if (workspaceError) throw workspaceError;
-  if (!workspace) throw new Error("EFESO workspace is not available.");
-
-  const { data: prior } = await admin
-    .from("workspace_memberships")
-    .select("id, workspace_id, user_id, role, status")
-    .eq("workspace_id", workspace.id)
-    .eq("user_id", input.userId)
-    .maybeSingle();
-
-  if (prior) {
-    const { data, error } = await admin
-      .from("workspace_memberships")
-      .update({
-        role: input.role,
-        status: "active",
-        provisioned_reason: "email_allowlist",
-      })
-      .eq("id", prior.id)
-      .select("id, workspace_id, user_id, role, status")
-      .single();
-    if (error) throw error;
-    if (!isWorkspaceRole(data.role)) throw new Error("Provisioned membership has an invalid role.");
-    await recordAccessAudit({
-      eventType: "first_access_activated",
-      outcome: "provisioned",
-      actorUserId: input.userId,
-      workspaceId: workspace.id,
-    });
-    return {
-      id: data.id,
-      workspaceId: data.workspace_id,
-      userId: data.user_id,
-      role: data.role,
-      status: data.status,
-    };
-  }
-
-  const role = input.role || DEFAULT_PROVISIONED_ROLE;
-  const { data, error } = await admin
-    .from("workspace_memberships")
-    .insert({
-      workspace_id: workspace.id,
-      user_id: input.userId,
-      role,
-      status: "active",
-      provisioned_reason: "email_allowlist",
-    })
-    .select("id, workspace_id, user_id, role, status")
-    .single();
-  if (error) {
-    const raced = await getActiveEfesoMembership(input.userId);
-    if (raced) return raced;
-    throw error;
-  }
-
-  await recordAccessAudit({
-    eventType: "first_access_activated",
-    outcome: "provisioned",
-    actorUserId: input.userId,
-    workspaceId: workspace.id,
-  });
-
-  if (!isWorkspaceRole(data.role)) throw new Error("Provisioned membership has an invalid role.");
-  return {
-    id: data.id,
-    workspaceId: data.workspace_id,
-    userId: data.user_id,
-    role: data.role,
-    status: data.status,
+  const admin = createAdminSupabaseClient() as unknown as {
+    rpc: (fn: string, args: Record<string, string>) => Promise<{ data: Array<{ id: string; workspace_id: string; user_id: string; role: string; status: string }> | null; error: unknown }>;
   };
+  const { data, error } = await admin.rpc("activate_allowlisted_member", {
+    p_user_id: input.userId, p_full_name: input.fullName?.trim() || "EFESO Member",
+  });
+  if (error) throw error;
+  const row = data?.[0];
+  if (!row || !isWorkspaceRole(row.role)) throw new Error("MEMBERSHIP_ACTIVATION_FAILED");
+  await recordAccessAudit({ eventType: "first_access_activated", outcome: "provisioned", actorUserId: input.userId, workspaceId: row.workspace_id });
+  return { id: row.id, workspaceId: row.workspace_id, userId: row.user_id, role: row.role, status: row.status };
 }
 
 /**

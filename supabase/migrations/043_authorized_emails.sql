@@ -55,19 +55,3 @@ ALTER TABLE public.access_audit_events
     'email_not_authorized',
     'first_access_activated'
   ));
-
--- Seed allowlist rows for the EFESO Brazil workspace (idempotent).
-INSERT INTO public.workspace_authorized_emails (workspace_id, email, role, status)
-SELECT
-  w.id,
-  v.email,
-  v.role,
-  'invited'
-FROM public.workspaces w
-CROSS JOIN (
-  VALUES
-    ('demo.member@efeso.com'::text, 'member'::text),
-    ('demo.admin@efeso.com'::text, 'admin'::text)
-) AS v(email, role)
-WHERE w.slug = 'efeso-brazil'
-ON CONFLICT (workspace_id, email) DO NOTHING;

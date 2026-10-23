@@ -53,7 +53,7 @@ export function decideAccess(input: {
     return { kind: "disabled", email, emailDomain };
   }
 
-  if (input.membershipRole) {
+  if (input.membershipRole && input.authorization.status === "active" && input.membershipRole === input.authorization.role) {
     return {
       kind: "authorized",
       email,

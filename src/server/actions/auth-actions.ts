@@ -46,7 +46,7 @@ export async function signInWithMagicLink(input: {
       };
     }
   } catch {
-    // If allowlist lookup fails (e.g. migration pending), still attempt OTP — gate remains in requireEfesoAccess.
+    return { error: "Não foi possível verificar a autorização. Tente novamente mais tarde." };
   }
 
   try {

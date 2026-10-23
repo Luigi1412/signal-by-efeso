@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { routes } from "@/lib/routes";
 import { recordAccessAudit } from "./audit";
-import { getAuthorizedEmail, markAuthorizedEmailActive } from "./authorized-emails";
+import { getAuthorizedEmail } from "./authorized-emails";
 import { decideAccess } from "./decisions";
 import { getAllowedEmailDomains } from "./email-domains";
 import { activateAuthorizedMembership, getActiveEfesoMembership } from "./membership";
@@ -91,7 +91,7 @@ async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { de
 
   let role = decision.kind === "authorized" ? decision.role : null;
   let workspaceId = membership?.workspaceId ?? null;
-  let accountStatus: "active" | "invited" = "active";
+  const accountStatus: "active" | "invited" = "active";
 
   if (decision.kind === "needs_activation" && user) {
     try {
@@ -102,10 +102,8 @@ async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { de
         role: decision.role,
         fullName: metadataName || user.email?.split("@")[0]?.replace(/\./g, " "),
       });
-      await markAuthorizedEmailActive({ email: decision.email, userId: user.id });
       role = activated.role;
       workspaceId = activated.workspaceId;
-      accountStatus = "active";
     } catch {
       await recordAccessAudit({
         eventType: "authorization_failure",

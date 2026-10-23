@@ -1,4 +1,5 @@
 import "server-only";
+import {demoModeEnabled} from "./demo-mode";
 
 export function isSupabaseConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -19,16 +20,12 @@ export function allowMockFallback(): boolean {
  * Falls back to DEMO_AUTH_MODE for backwards compatibility in local setups.
  */
 export function isDemoMode(): boolean {
-  const explicit = process.env.DEMO_MODE?.trim().toLowerCase();
-  if (explicit === "true") return true;
-  if (explicit === "false") return false;
-  if (process.env.NODE_ENV === "production") return false;
-  return process.env.DEMO_AUTH_MODE === "true";
+  return demoModeEnabled(process.env.NODE_ENV,process.env.DEMO_MODE,process.env.DEMO_AUTH_MODE);
 }
 
 /** Product demo badge/footer — only when DEMO_MODE is explicitly true (never via auth fallback). */
 export function isExplicitDemoContent(): boolean {
-  return process.env.DEMO_MODE?.trim().toLowerCase() === "true";
+  return isDemoMode() && process.env.DEMO_MODE?.trim().toLowerCase() === "true";
 }
 
 export function isDemoAuthMode(): boolean {

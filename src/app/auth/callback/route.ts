@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { safeLocalRedirect } from "@/server/access/redirect";
 import { routes } from "@/lib/routes";
 
 /** Completes magic-link / OAuth code exchange, then sends the user into the app shell. */
@@ -7,7 +8,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const next = url.searchParams.get("next");
-  const destination = next?.startsWith("/") ? next : routes.companies;
+  const destination = safeLocalRedirect(next, routes.companies);
 
   if (code) {
     try {
