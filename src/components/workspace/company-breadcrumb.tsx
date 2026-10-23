@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedLink as Link } from "@/components/local-preview/runtime";
 import { usePathname } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { ui } from "@/i18n";

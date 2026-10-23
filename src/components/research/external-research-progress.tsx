@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedLink as Link, useLocalPreview } from "@/components/local-preview/runtime";
 import { researchOutcomeMemberCopy } from "@/server/product/research-outcome";
 import { useEffect, useState, useTransition } from "react";
 import { ArrowRight, Check } from "lucide-react";
@@ -59,24 +59,30 @@ function sourceStatusLabel(status: string): string {
 }
 
 export function ExternalResearchProgress({ initial }: { initial: ResearchView }) {
+  const preview = useLocalPreview();
+  const tick = preview?.tick ?? tickExternalResearchAction;
+  const resolve = preview?.resolve ?? resolveResearchEntityAction;
+  const start = preview?.start ?? startExternalResearchAction;
+  const cancel = preview?.cancel ?? cancelExternalResearchAction;
   const [view, setView] = useState(initial);
   const [tickKey, setTickKey] = useState(0);
   const [pending, startTransition] = useTransition();
   const [manualDomain, setManualDomain] = useState("");
 
   useEffect(() => {
+    if (preview) return;
     const terminal = ["completed", "partial", "failed", "cancelled", "needs_user_resolution"].includes(view.status);
     if (terminal) return;
     const timer = setTimeout(() => {
       startTransition(async () => {
-        const result = await tickExternalResearchAction(view.id);
+        const result = await tick(view.id);
         if (result.ok) setView(result.run);
         setTickKey((value) => value + 1);
 
       });
     }, 2000);
     return () => clearTimeout(timer);
-  }, [view.id, view.status, tickKey]);
+  }, [view.id, view.status, tickKey, preview, tick]);
 
   const currentIndex = RESEARCH_PHASES.findIndex((phase) => phase.status === view.status);
   const done = view.status === "completed" || view.status === "partial";
@@ -140,9 +146,9 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
                       disabled={pending}
                       onClick={() => {
                         startTransition(async () => {
-                          const result = await resolveResearchEntityAction({ runId: view.id, domain: candidate.domain });
+                          const result = await resolve({ runId: view.id, domain: candidate.domain });
                           if (result.ok) {
-                            const next = await tickExternalResearchAction(view.id);
+                            const next = await tick(view.id);
                             if (next.ok) setView(next.run);
                           }
                         });
@@ -169,20 +175,20 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
                     startTransition(async () => {
                       const domain = manualDomain.trim();
                       if (domain) {
-                        const result = await resolveResearchEntityAction({ runId: view.id, domain });
+                        const result = await resolve({ runId: view.id, domain });
                         if (result.ok) {
-                          const next = await tickExternalResearchAction(view.id);
+                          const next = await tick(view.id);
                           if (next.ok) setView(next.run);
                           return;
                         }
                       }
-                      const restarted = await startExternalResearchAction({
+                      const restarted = await start({
                         query: view.query,
                         confirmUnresolved: true,
                         selectedDomain: domain || undefined,
                       });
                       if (restarted.ok) {
-                        const next = await tickExternalResearchAction(restarted.runId);
+                        const next = await tick(restarted.runId);
                         if (next.ok) setView(next.run);
                       }
                     });
@@ -259,8 +265,8 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
             disabled={pending}
             onClick={() => {
               startTransition(async () => {
-                await cancelExternalResearchAction(view.id);
-                const next = await tickExternalResearchAction(view.id);
+                await cancel(view.id);
+                const next = await tick(view.id);
                 if (next.ok) setView(next.run);
               });
             }}

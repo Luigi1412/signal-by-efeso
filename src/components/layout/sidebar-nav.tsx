@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedLink as Link, useLocalPreview } from "@/components/local-preview/runtime";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,9 @@ interface SidebarNavProps {
 }
 
 export function SidebarNav({ items, onNavigate }: SidebarNavProps) {
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  const preview = useLocalPreview();
+  const pathname = preview ? rawPathname.replace(/^\/preview(?=\/|$)/, "") : rawPathname;
 
   return (
     <nav className="flex flex-col gap-0.5">

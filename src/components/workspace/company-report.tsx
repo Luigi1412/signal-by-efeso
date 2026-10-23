@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedLink as Link, useLocalPreview } from "@/components/local-preview/runtime";
 import { useEffect, useMemo, useState } from "react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,6 +24,7 @@ type TocSection = { id: string; number: string; title: string };
 const RETAINED_SOURCE_STATUSES = new Set(["accepted", "fetched", "ingested", "processed"]);
 
 export function CompanyReport({ slug, briefing, sources, history, demoMode = false }: CompanyReportProps) {
+  const localPreview = useLocalPreview();
   const compact = !briefing.publishFullReport || briefing.outcome === "insufficient_evidence";
   const retainedSources = sources
     .filter((source) => RETAINED_SOURCE_STATUSES.has(source.status) || Boolean(source.snapshot_id))
@@ -290,7 +291,7 @@ export function CompanyReport({ slug, briefing, sources, history, demoMode = fal
         </div>
 
         <footer className="border-t border-border/70 px-6 py-4 text-xs text-muted-foreground sm:px-8">
-          {demoMode
+          {localPreview ? "PREVIEW LOCAL · Dados, fontes, métricas, Fits e oportunidades fictícios. Exclusivo para revisão visual; não valida pesquisa real." : demoMode
             ? ui.report.footer
             : "Signal by EFESO · Uso interno · Pesquisa baseada em fontes públicas recuperadas nesta execução."}
           <span className="sr-only">{slug}</span>

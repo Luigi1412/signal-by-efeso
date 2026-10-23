@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { ui } from "@/i18n";
 import { routes } from "@/lib/routes";
 
+import { useLocalPreview } from "@/components/local-preview/runtime";
+import { localPreviewHref } from "@/lib/local-preview";
+
 interface WorkspaceActionsProps {
   companySlug: string;
   companyName?: string;
@@ -15,16 +18,17 @@ interface WorkspaceActionsProps {
 
 /** Header actions for company workspace — download report + update research. */
 export function WorkspaceActions({ companySlug, companyName }: WorkspaceActionsProps) {
+  const preview = useLocalPreview();
   const [updating, setUpdating] = useState(false);
   const router = useRouter();
 
   async function handleUpdate() {
     setUpdating(true);
-    const result = await startExternalResearchAction({
+    const result = await (preview?.start ?? startExternalResearchAction)({
       query: companyName || companySlug,
       existingSlug: companySlug,
     });
-    if (result.ok) router.push(routes.research(result.runId));
+    if (result.ok) router.push(preview ? localPreviewHref(routes.research(result.runId)) : routes.research(result.runId));
     setUpdating(false);
   }
 

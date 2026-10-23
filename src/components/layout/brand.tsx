@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { ScopedLink as Link } from "@/components/local-preview/runtime";
 import { ui } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { routes } from "@/lib/routes";

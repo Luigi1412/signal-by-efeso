@@ -15,6 +15,9 @@ import {
   type PreviewResearchResult,
 } from "@/server/actions/external-research-actions";
 
+import { useLocalPreview } from "@/components/local-preview/runtime";
+import { localPreviewHref } from "@/lib/local-preview";
+
 type PreviewOk = Extract<PreviewResearchResult, { ok: true }>;
 
 function normalizeDomain(value: string): string {
@@ -36,10 +39,14 @@ function normalizeCountry(value: string): string | undefined {
   return trimmed;
 }
 
-export function NewResearchForm() {
+export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyName?: string } = {}) {
+  const localPreview = useLocalPreview();
+  const identify = localPreview?.identify ?? previewExternalResearchAction;
+  const start = localPreview?.start ?? startExternalResearchAction;
+  const href = localPreview ? localPreviewHref : (value: string) => value;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [companyName, setCompanyName] = useState("");
+  const [companyName, setCompanyName] = useState(initialCompanyName);
   const [website, setWebsite] = useState("");
   const [country, setCountry] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -56,7 +63,7 @@ export function NewResearchForm() {
     startTransition(async () => {
       setError(null);
       setPreview(null);
-      const result = await previewExternalResearchAction({
+      const result = await identify({
         query: companyName.trim(),
         country: normalizeCountry(country),
         selectedDomain: website.trim() ? normalizeDomain(website) : undefined,
@@ -78,7 +85,7 @@ export function NewResearchForm() {
     startTransition(async () => {
       setError(null);
       const domain = extra.selectedDomain ?? (website.trim() ? normalizeDomain(website) : undefined);
-      const result = await startExternalResearchAction({
+      const result = await start({
         query: companyName.trim(),
         country: normalizeCountry(country),
         existingSlug: extra.existingSlug,
@@ -90,7 +97,7 @@ export function NewResearchForm() {
         setError(result.error);
         return;
       }
-      router.push(routes.research(result.runId));
+      router.push(href(routes.research(result.runId)));
     });
   }
 
@@ -191,7 +198,7 @@ export function NewResearchForm() {
             {[preview.country, preview.industry, preview.domain].filter(Boolean).join(" · ")}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="button" variant="brand" disabled={pending} onClick={() => router.push(routes.company(preview.slug))}>
+            <Button type="button" variant="brand" disabled={pending} onClick={() => router.push(href(routes.company(preview.slug)))}>
               {ui.externalResearch.openCompany}
             </Button>
             <Button

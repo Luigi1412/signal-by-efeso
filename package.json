@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "preview:local": "node scripts/local-preview.mjs",
     "build": "next build",
     "start": "next start",
     "worker:research": "node --import ./scripts/stub-server-only.mjs --import tsx scripts/research-worker.ts",
@@ -53,6 +54,7 @@
     "release:check": "node --import tsx scripts/release-check.ts",
     "test:unit": "node scripts/test-unit.mjs",
     "test:db-local": "node tests/local-db.mjs",
+    "test:preview-local": "node tests/local-preview-http.mjs",
     "benchmark:research": "node --import ./scripts/stub-server-only.mjs --import tsx scripts/research-benchmark.ts"
   },
   "dependencies": {
@@ -62,7 +64,7 @@
     "cn": "^0.4.0",
     "ipaddr.js": "^2.5.0",
     "lucide-react": "^1.57.0",
-    "next": "16.4.0",
+    "next": "16.4.3",
     "openai": "^7.34.0",
     "pdfjs-dist": "^6.4.299",
     "radix-ui": "^1.8.1",
@@ -82,7 +84,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.4.0",
+    "eslint-config-next": "16.4.3",
     "supabase": "^2.121.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
