@@ -25,13 +25,13 @@ export function CompanyWorkspaceHeader({
   demoMode = false,
 }: CompanyWorkspaceHeaderProps) {
   const domicile = corporateCountry || company.country;
-  const meta = [company.industry, domicile ? `Domicílio: ${domicile}` : null, company.website]
+  const meta = [company.industry, domicile, company.website]
     .filter(Boolean)
     .join(" · ");
 
   return (
     <div className="border-b border-border/60 print:hidden">
-      <div className="mx-auto w-full max-w-6xl px-5 pt-5 sm:px-8 lg:px-10">
+      <div className="mx-auto w-full max-w-6xl px-5 pt-8 sm:px-8 lg:px-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CompanyBreadcrumb slug={company.slug} companyName={company.name} />
           <DemoBadge className="print:hidden" visible={demoMode} />
@@ -39,9 +39,9 @@ export function CompanyWorkspaceHeader({
 
         <div className="mt-4 flex flex-col gap-4 pb-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-[38px] text-foreground">{company.name}</h1>
+            <h1 className="text-2xl font-medium tracking-[-0.035em] sm:text-[30px] text-foreground">{company.name}</h1>
             {meta ? <p className="mt-1 text-sm text-muted-foreground">{meta}</p> : null}
-            {researchGeography ? (
+            {researchGeography && researchGeography !== domicile ? (
               <p className="mt-1 text-sm text-muted-foreground">
                 Escopo da pesquisa: <span className="font-medium text-foreground">{researchGeography}</span>
               </p>

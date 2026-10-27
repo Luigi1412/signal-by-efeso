@@ -1,6 +1,6 @@
 # SIGNAL — apresentação local
 
-Este roteiro usa o frontend recuperado e cenários fictícios isolados. Não é uma pesquisa real nem uma aprovação de produção.
+Este roteiro usa o frontend refinado e cenários fictícios isolados. Não é uma pesquisa real nem uma aprovação de produção.
 
 ## Abrir no Mac
 
@@ -19,8 +19,8 @@ Se a porta 3000 estiver ocupada, execute `SIGNAL_PREVIEW_PORT=3001 npm run previ
 2. **Horizonte Industrial:** abra o relatório com movimento. Mostre a tese, interpretação operacional, aderência e oportunidade a validar. Expanda uma evidência para mostrar a fonte secundária à leitura principal. São exemplos fictícios.
 3. **Verde Papel:** apresente o estado somente com fatos e a explicação de por que não há sinal. Sem oportunidade forçada.
 4. **Oficina Delta:** apresente a evidência insuficiente e as lacunas, sem KPIs zerados.
-5. **Nova pesquisa:** mostre a entrada principal pelo nome, as opções avançadas e a confirmação. Os controles de preview permitem demonstrar identificação, empresa existente, ambiguidade e ausência de identificação, sem consulta externa.
-6. **Progresso e Conta:** use os atalhos recolhíveis de cenários para abrir progresso ilustrativo; as fases são escolhidas manualmente. Conta mostra um perfil ilustrativo sem sessão real.
+5. **Nova pesquisa:** mostre a entrada principal pelo nome, “Mais opções” e a confirmação. Os controles de preview permitem demonstrar identificação, empresa existente, ambiguidade e ausência de identificação, sem consulta externa.
+6. **Progresso e Conta:** abra “Atualizar pesquisa” em uma empresa para ver o progresso ilustrativo; o controle de etapas fica recolhido ao final. Conta mostra o ambiente e informa que não existe sessão autenticada, sem inventar uma pessoa ou um e-mail.
 
 Mantenha visível o aviso PREVIEW LOCAL. Não apresente esses dados como resultados de Embraer, Suzano ou EssilorLuxottica. A pesquisa real requer Supabase/Auth, Tavily, Ollama/modelo e usuário/workspace autorizados.
 
@@ -33,7 +33,7 @@ Mantenha visível o aviso PREVIEW LOCAL. Não apresente esses dados como resulta
 - Build Next.js 16.4.3 aprovado.
 - Smoke HTTP de produção aprovado: login, rotas protegidas, callback e preview recusado em produção mesmo com flag habilitada.
 - HTTP de desenvolvimento aprovado para navegação, formulário, resolução, fases, três relatórios, evidências, Conta e Admin. Zero chamadas aos endpoints Supabase/Ollama instrumentados; host não local recusado.
-- Revisão visual/interativa no navegador remoto não concluída: o navegador não alcançou o loopback do servidor (`ERR_CONNECTION_REFUSED`). Não há alegação de QA visual completo.
+- Revisão visual/interativa no navegador remoto não concluída: o navegador não alcançou o loopback do servidor (`ERR_CONNECTION_REFUSED`) e sua política bloqueou a abertura de snapshots por `file:`. Não há alegação de QA visual completo.
 - EssilorLuxottica: preflight bloqueado por configuração externa; nenhuma pesquisa real iniciada.
 
 ## Recuperação

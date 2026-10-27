@@ -11,7 +11,7 @@ const env = {
   NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "", SUPABASE_SERVICE_ROLE_KEY: "", DATABASE_URL: "", TAVILY_API_KEY: "", OPENAI_API_KEY: "",
   NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${port}`, NEXT_TELEMETRY_DISABLED: "1",
 };
-console.log(`PREVIEW LOCAL — fixtures only; no authentication, database, worker or model connection.\nOpen http://127.0.0.1:${port}/preview`);
+console.log(`PREVIEW LOCAL — fixtures only; no authentication, database, worker or model connection.\nOpen http://127.0.0.1:${port}/preview/companies`);
 const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)], { env, stdio: "inherit" });
 process.on("SIGINT", () => child.kill("SIGINT"));
 process.on("SIGTERM", () => child.kill("SIGTERM"));

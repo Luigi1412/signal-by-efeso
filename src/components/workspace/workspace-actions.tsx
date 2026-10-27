@@ -14,10 +14,11 @@ import { localPreviewHref } from "@/lib/local-preview";
 interface WorkspaceActionsProps {
   companySlug: string;
   companyName?: string;
+  updateOnly?: boolean;
 }
 
 /** Header actions for company workspace — download report + update research. */
-export function WorkspaceActions({ companySlug, companyName }: WorkspaceActionsProps) {
+export function WorkspaceActions({ companySlug, companyName, updateOnly = false }: WorkspaceActionsProps) {
   const preview = useLocalPreview();
   const [updating, setUpdating] = useState(false);
   const router = useRouter();
@@ -38,10 +39,10 @@ export function WorkspaceActions({ companySlug, companyName }: WorkspaceActionsP
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Button type="button" variant="outline" onClick={handleDownload}>
+      {!updateOnly && <Button type="button" variant="ghost" onClick={handleDownload}>
         <Download data-icon="inline-start" />
         {ui.workspace.downloadReport}
-      </Button>
+      </Button>}
       <Button type="button" variant="brand" onClick={() => void handleUpdate()} disabled={updating}>
         <RefreshCw data-icon="inline-start" />
         {ui.companyReport.updateResearch}

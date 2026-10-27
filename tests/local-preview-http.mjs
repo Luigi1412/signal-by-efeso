@@ -42,14 +42,27 @@ try {
     assert.ok(html.includes("PREVIEW LOCAL"), path);
     if (path === "/preview/research/new") {
       assert.ok(html.includes("Qual empresa você quer entender?"));
-      assert.ok(html.includes("Opções avançadas"));
+      assert.ok(html.includes("Mais opções"));
+      assert.ok(html.includes("Pesquisar empresa"));
+      assert.ok(html.includes("Cenários de identificação"));
       assert.ok(!html.includes('id="instructions"'), "member search must not require a research brief");
     }
     if (path.includes("phase=generating_intelligence")) {
       assert.ok(html.includes('role="status"'));
+      assert.ok(html.includes('aria-label="Etapas da pesquisa"'));
+      assert.ok(html.includes("Preparando resultado"));
       assert.ok(!html.includes('aria-valuenow'), "phase progress is not a measured percentage");
     }
   }
+  const home = await read("/preview/companies");
+  assert.ok(home.html.includes('aria-label="Empresas analisadas"'));
+  assert.ok(!home.html.includes("<table"), "the company list must adapt without a wide administrative table");
+  assert.ok(home.html.includes("1 oportunidade a validar"));
+  assert.ok(!home.html.includes("0 oportunidades"));
+  const account = await read("/preview/account");
+  assert.ok(account.html.includes("Sem usuário autenticado"));
+  assert.ok(!account.html.includes("pessoa@preview.invalid"), "preview must not impersonate a signed-in person");
+  assert.ok(!account.html.includes(">Sair</button>"));
   for (const [slug, material] of [["horizonte-industrial", true], ["verde-papel", false], ["oficina-delta", false]]) {
     const { response, html } = await read(`/preview/companies/${slug}`);
     assert.equal(response.status, 200);
@@ -59,6 +72,12 @@ try {
     assert.ok(html.includes("fictícios"));
     if (slug === "horizonte-industrial") {
       assert.ok(html.includes("Por que isso importa"));
+      assert.ok(html.includes("R$ 180 milhões"));
+      assert.ok(html.includes("250 mil unidades"));
+      assert.ok(html.includes("2027"));
+      assert.ok(html.includes("Implicação operacional"));
+      assert.ok(html.includes("Possível necessidade"));
+      assert.ok(html.includes("Hipótese comercial"));
       assert.ok(html.includes("Oportunidade a validar"));
       assert.ok(html.includes('id="report-evidencias"'));
       assert.ok(html.includes("Ver evidência original"));
@@ -68,6 +87,8 @@ try {
       assert.ok(!html.includes("Oportunidade a validar"));
     } else {
       assert.ok(html.includes("O que faltou"));
+      assert.ok(!html.includes("O que conseguimos confirmar"), "an empty confirmation section must be omitted");
+      assert.ok(html.includes("Atualizar pesquisa"));
       assert.ok(!html.includes("Por que não há sinal"));
       assert.ok(!html.includes("fatos validados</span>"), "insufficient report must not show a zero KPI strip");
     }
