@@ -1,4 +1,4 @@
-import { extractEmailDomain, isAllowedCorporateEmail } from "./email-domains";
+import { extractEmailDomain, isEligibleAccessEmail } from "./email-domains";
 import { isAdminRole, type WorkspaceRole } from "./roles";
 import type { AuthorizedEmailStatus } from "./authorized-emails";
 
@@ -28,20 +28,21 @@ export type AccessDecision =
 
 export function decideAccess(input: {
   authenticated: boolean;
+  emailConfirmed?: boolean;
   email: string | null | undefined;
   allowedDomains: readonly string[];
   membershipRole: string | null;
   /** null = email not on allowlist */
-  authorization: { status: AuthorizedEmailStatus; role: WorkspaceRole } | null;
+  authorization: { status: AuthorizedEmailStatus; role: WorkspaceRole; externalAccessApproved?: boolean } | null;
 }): AccessDecision {
-  if (!input.authenticated) return { kind: "unauthenticated" };
+  if (!input.authenticated || input.emailConfirmed === false) return { kind: "unauthenticated" };
   if (input.allowedDomains.length === 0) return { kind: "config_missing" };
 
   const email = input.email?.trim().toLowerCase() ?? "";
   if (!email) return { kind: "invalid_email" };
 
   const emailDomain = extractEmailDomain(email);
-  if (!emailDomain || !isAllowedCorporateEmail(email, input.allowedDomains)) {
+  if (!emailDomain || !isEligibleAccessEmail(email, input.allowedDomains, input.authorization?.externalAccessApproved)) {
     return { kind: "domain_denied", emailDomain };
   }
 

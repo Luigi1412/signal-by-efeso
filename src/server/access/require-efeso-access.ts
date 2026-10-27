@@ -43,11 +43,12 @@ async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { de
 
   const decision = decideAccess({
     authenticated: Boolean(user),
+    emailConfirmed: Boolean(user?.email_confirmed_at),
     email: user?.email ?? null,
     allowedDomains,
     membershipRole: membership?.role ?? null,
     authorization: authorization
-      ? { status: authorization.status, role: authorization.role }
+      ? { status: authorization.status, role: authorization.role, externalAccessApproved: authorization.externalAccessApproved }
       : null,
   });
 
@@ -200,7 +201,7 @@ export function publicAccessErrorMessage(error: unknown): string {
     if (error.reason === "unauthenticated") return "Entre com a sua conta EFESO para continuar.";
     if (error.reason === "forbidden") return "Você não tem permissão para esta ação.";
     if (error.reason === "not_authorized") {
-      return "Seu email pertence à EFESO, mas ainda não possui acesso ao SIGNAL. Entre em contato com o administrador.";
+      return "Este e-mail ainda não possui acesso ao SIGNAL. Entre em contato com o administrador.";
     }
     return "Acesso restrito a usuários autorizados da EFESO.";
   }

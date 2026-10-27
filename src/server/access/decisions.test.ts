@@ -119,3 +119,19 @@ test("public and admin path helpers", () => {
   assert.equal(isAdminPath("/admin/signal-lab"), true);
   assert.equal(isAdminPath("/knowledge/efeso"), false);
 });
+
+test("an exact approved external address still requires active allowlist and membership", () => {
+  const input = { authenticated: true, emailConfirmed: true, email: "approved@gmail.com", allowedDomains: allowed, membershipRole: "member", authorization: { status: "active" as const, role: "member" as const, externalAccessApproved: true } };
+  assert.equal(decideAccess(input).kind, "authorized");
+  assert.equal(decideAccess({ ...input, authorization: { ...input.authorization, externalAccessApproved: false } }).kind, "domain_denied");
+  assert.equal(decideAccess({ ...input, authorization: null }).kind, "domain_denied");
+  assert.equal(decideAccess({ ...input, authorization: { ...input.authorization, status: "disabled" } }).kind, "disabled");
+  assert.equal(decideAccess({ ...input, membershipRole: null }).kind, "needs_activation");
+});
+
+test("an unconfirmed identity or an empty boundary configuration cannot use an external exception", () => {
+  const input = { authenticated: true, email: "approved@gmail.com", allowedDomains: allowed, membershipRole: "member", authorization: { status: "active" as const, role: "member" as const, externalAccessApproved: true } };
+  assert.equal(decideAccess({ ...input, emailConfirmed: false }).kind, "unauthenticated");
+  assert.equal(decideAccess({ ...input, allowedDomains: [] }).kind, "config_missing");
+  assert.equal(decideAccess({ ...input, email: "another@gmail.com", authorization: null }).kind, "domain_denied");
+});

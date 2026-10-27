@@ -2361,13 +2361,16 @@ isOneToOne: false
                   ]
                 },"workspace_authorized_emails": {
                   Row: {
+                    external_access_approved: boolean,
                     "activated_at": string | null,"activated_user_id": string | null,"created_at": string,"email": string,"id": string,"invited_at": string,"role": string,"status": string,"updated_at": string,"workspace_id": string
                   }
                   ComputedFields: never
                   Insert: {
+                    external_access_approved?: boolean,
                     "activated_at"?: string | null,"activated_user_id"?: string | null,"created_at"?: string,"email": string,"id"?: string,"invited_at"?: string,"role"?: string,"status"?: string,"updated_at"?: string,"workspace_id": string
                   }
                   Update: {
+                    external_access_approved?: boolean,
                     "activated_at"?: string | null,"activated_user_id"?: string | null,"created_at"?: string,"email"?: string,"id"?: string,"invited_at"?: string,"role"?: string,"status"?: string,"updated_at"?: string,"workspace_id"?: string
                   }
                   Relationships: [

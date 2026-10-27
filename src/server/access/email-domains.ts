@@ -44,3 +44,9 @@ export function isAllowedCorporateEmail(
 function normalizeDomain(value: string): string {
   return value.trim().toLowerCase().replace(/\.+$/, "");
 }
+
+/** A domain exception comes only from the matching server-side allowlist row. */
+export function isEligibleAccessEmail(email: string, domains: readonly string[], externalApproved = false): boolean {
+  if (!domains.length || !extractEmailDomain(email)) return false;
+  return isAllowedCorporateEmail(email, domains) || externalApproved;
+}

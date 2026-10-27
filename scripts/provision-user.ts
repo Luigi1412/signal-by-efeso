@@ -1,135 +1,40 @@
-/**
- * Secure admin provisioning helper.
- * Usage:
- *   npm run user:provision -- --email someone@efeso.com --role member|admin
- *
- * Adds the email to the SIGNAL allowlist (invited), then prefers Supabase invite.
- * Never prints passwords or tokens.
- */
+/** Authorize one exact address; create a passwordless Auth identity. No credentials or emails are generated here. */
+import { existsSync } from "node:fs";
+import { loadEnvFile } from "node:process";
 import { createClient } from "@supabase/supabase-js";
-import { getAllowedEmailDomains, isAllowedCorporateEmail } from "../src/server/access/email-domains";
-
-function arg(name: string): string | null {
-  const idx = process.argv.indexOf(`--${name}`);
-  if (idx < 0) return null;
-  return process.argv[idx + 1] ?? null;
-}
-
+import { getAllowedEmailDomains, extractEmailDomain, isAllowedCorporateEmail } from "../src/server/access/email-domains";
+import { isWorkspaceRole } from "../src/server/access/roles";
+import type { Database } from "../src/types/database";
+for (const path of [".env.local", ".env"]) if (existsSync(path)) loadEnvFile(path);
+class ProvisioningError extends Error {}
+function arg(name: string) { const i = process.argv.indexOf(`--${name}`); return i < 0 ? undefined : process.argv[i + 1]; }
 async function main() {
-  const email = (arg("email") ?? "").trim().toLowerCase();
-  const role = (arg("role") ?? "member").trim().toLowerCase();
-
-  if (!email || !email.includes("@")) {
-    console.error("usage: npm run user:provision -- --email user@efeso.com --role member|admin");
-    process.exit(1);
-  }
-  if (role !== "member" && role !== "admin") {
-    console.error("role must be member or admin");
-    process.exit(1);
-  }
-
-  const allowed = getAllowedEmailDomains();
-  if (!isAllowedCorporateEmail(email, allowed)) {
-    console.error("email domain not allowed");
-    process.exit(1);
-  }
-
+  const email = arg("email")?.trim().toLowerCase() ?? "";
+  if (!extractEmailDomain(email)) throw new ProvisioningError("Informe --email com um endereço válido.");
+  const external = !isAllowedCorporateEmail(email, getAllowedEmailDomains());
+  if (external && !process.argv.includes("--approve-external-address")) throw new ProvisioningError("Endereço externo exige --approve-external-address. Isso não libera outros endereços do domínio.");
+  if (!getAllowedEmailDomains().length) throw new ProvisioningError("Configure ALLOWED_EMAIL_DOMAINS antes de provisionar.");
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url || !serviceKey) {
-    console.error("Supabase admin credentials missing. Configure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
-    console.error("Manual procedure: insert into workspace_authorized_emails, then invite in Supabase Auth.");
-    process.exit(1);
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!url || !key) throw new ProvisioningError("Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env.local não versionado.");
+  const admin = createClient<Database>(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: workspace, error: wsError } = await admin.from("workspaces").select("id").eq("slug", "efeso-brazil").eq("status", "active").single();
+  if (wsError || !workspace) throw new ProvisioningError("Workspace EFESO ativo não encontrado. Aplique migrations e inicialize o workspace real.");
+  const { data: current, error: lookupError } = await admin.from("workspace_authorized_emails").select("role,status,external_access_approved").eq("workspace_id", workspace.id).eq("email", email).maybeSingle();
+  if (lookupError) throw new ProvisioningError("Allowlist indisponível. Verifique a migration 052.");
+  if (current?.status === "disabled" && !process.argv.includes("--reactivate")) throw new ProvisioningError("Endereço revogado; use --reactivate somente se quiser restaurar seu acesso.");
+  const role = arg("role") ?? current?.role ?? "member";
+  if (!isWorkspaceRole(role)) throw new ProvisioningError("Perfil inválido.");
+  const { error } = await admin.from("workspace_authorized_emails").upsert({
+    workspace_id: workspace.id, email, role, status: current?.status === "active" ? "active" : "invited",
+    external_access_approved: external && process.argv.includes("--approve-external-address"),
+  }, { onConflict: "workspace_id,email" });
+  if (error) throw new ProvisioningError("Não foi possível autorizar o endereço.");
+  const created = await admin.auth.admin.createUser({ email, email_confirm: false });
+  if (created.error && !["email_exists", "user_already_exists"].includes(created.error.code ?? "")) {
+    throw new ProvisioningError("Allowlist salva, mas Auth não confirmou a criação. Verifique o usuário no painel Supabase Auth.");
   }
-
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-
-  await upsertAllowlist(admin, email, role);
-  console.log(`ok: allowlist invited (${email}, ${role})`);
-
-  const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { signal_role: role },
-  });
-
-  if (inviteError) {
-    const { data: listed, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-    if (listError) {
-      console.error("auth invite unavailable; allowlist row was still created");
-      process.exit(0);
-    }
-    const existing = listed.users.find((user) => user.email?.toLowerCase() === email);
-    if (!existing) {
-      console.error("auth invite failed:", inviteError.message);
-      console.error("allowlist row exists — user can complete first access after Auth invite from dashboard");
-      process.exit(0);
-    }
-    await upsertMembership(admin, existing.id, role);
-    console.log(`ok: membership ensured for existing user (${role})`);
-    return;
-  }
-
-  const userId = inviteData.user?.id;
-  if (!userId) {
-    console.error("invite returned no user id; allowlist row exists");
-    process.exit(0);
-  }
-  await upsertMembership(admin, userId, role);
-  console.log(`ok: invite sent and membership set (${role})`);
+  console.log(`READY: ${email} (${role}) na allowlist; Auth ${created.error ? "já existente" : "criado sem senha"}.`);
+  console.log("O usuário deve abrir /login e solicitar seu próprio link. A ativação exige a confirmação do e-mail; nenhuma sessão foi criada por este script.");
 }
-
-async function upsertAllowlist(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  admin: any,
-  email: string,
-  role: string,
-) {
-  const { data: workspaces, error: wsError } = await admin.from("workspaces").select("id").eq("slug", "efeso-brazil").limit(1);
-  if (wsError || !workspaces?.[0]) {
-    throw new Error("workspace lookup failed");
-  }
-  const workspaceId = workspaces[0].id as string;
-  const { error } = await admin.from("workspace_authorized_emails").upsert(
-    {
-      workspace_id: workspaceId,
-      email,
-      role,
-      status: "invited",
-    },
-    { onConflict: "workspace_id,email" },
-  );
-  if (error) throw error;
-}
-
-async function upsertMembership(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  admin: any,
-  userId: string,
-  role: string,
-) {
-  const { data: workspaces, error: wsError } = await admin.from("workspaces").select("id").eq("slug", "efeso-brazil").limit(1);
-  if (wsError || !workspaces?.[0]) {
-    throw new Error("workspace lookup failed");
-  }
-  const workspaceId = workspaces[0].id as string;
-  const { error } = await admin.from("workspace_memberships").upsert(
-    {
-      workspace_id: workspaceId,
-      user_id: userId,
-      role,
-      status: "invited",
-      provisioned_reason: "email_allowlist",
-    },
-    { onConflict: "workspace_id,user_id" },
-  );
-  if (error) {
-    console.error("membership upsert failed — allowlist is enough for first access");
-  }
-}
-
-main().catch((error) => {
-  console.error("provision failed");
-  if (error instanceof Error && !/password|token|key|secret/i.test(error.message)) {
-    console.error(error.message);
-  }
-  process.exit(1);
-});
+main().catch((error) => { if (error instanceof ProvisioningError) console.error(error.message); console.error("Provisionamento não concluído. Execute npm run check:real e verifique workspace, migration 052 e Auth. Nenhuma senha foi gerada."); process.exitCode = 1; });

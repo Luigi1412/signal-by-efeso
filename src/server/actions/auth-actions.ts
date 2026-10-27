@@ -1,11 +1,12 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isDemoAuthMode, isSupabaseConfigured } from "@/lib/supabase/env";
 import { ensureDemoAccount } from "@/server/demo-bootstrap";
 import { routes } from "@/lib/routes";
-import { getAllowedEmailDomains, isAllowedCorporateEmail } from "@/server/access/email-domains";
+import { getAllowedEmailDomains, isEligibleAccessEmail } from "@/server/access/email-domains";
 import { getAuthorizedEmail } from "@/server/access/authorized-emails";
 
 function appOrigin(): string {
@@ -17,7 +18,7 @@ function appOrigin(): string {
 function publicAuthError(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("fetch") || message.includes("ECONNREFUSED") || message.includes("Failed to fetch")) {
-    return "Supabase local não está em execução. Rode npm run supabase:start e tente de novo.";
+    return "O serviço de acesso está indisponível. Tente novamente mais tarde.";
   }
   return "Não foi possível entrar. Verifique as credenciais e tente novamente.";
 }
@@ -26,24 +27,15 @@ export async function signInWithMagicLink(input: {
   email: string;
 }): Promise<{ error: string } | { ok: true; message: string }> {
   if (!isSupabaseConfigured()) {
-    return { error: "O Supabase local não está configurado." };
+    return { error: "O serviço de acesso ainda não está configurado. Entre em contato com o administrador." };
   }
   const email = input.email.trim().toLowerCase();
-  if (!email) return { error: "Informe o e-mail corporativo EFESO." };
+  if (!email) return { error: "Informe seu e-mail autorizado." };
 
-  const allowed = getAllowedEmailDomains();
-  if (!isAllowedCorporateEmail(email, allowed)) {
-    return { error: "Use um e-mail corporativo autorizado da EFESO." };
-  }
-
-  // Fail closed early when the email is known-not-authorized. Do not reveal other details.
   try {
-    const authorized = await getAuthorizedEmail(email);
-    if (!authorized || authorized.status === "disabled") {
-      return {
-        error:
-          "Seu email pertence à EFESO, mas ainda não possui acesso ao SIGNAL. Entre em contato com o administrador.",
-      };
+    const authorization = await getAuthorizedEmail(email);
+    if (!authorization || authorization.status === "disabled" || !isEligibleAccessEmail(email, getAllowedEmailDomains(), authorization.externalAccessApproved)) {
+      return { error: "Acesso disponível apenas para e-mails previamente autorizados. Entre em contato com o administrador." };
     }
   } catch {
     return { error: "Não foi possível verificar a autorização. Tente novamente mais tarde." };
@@ -71,7 +63,7 @@ export async function signInWithMagicLink(input: {
 
 export async function signInWithGoogle(): Promise<{ error: string } | void> {
   if (!isSupabaseConfigured()) {
-    return { error: "O Supabase local não está configurado." };
+    return { error: "O serviço de acesso ainda não está configurado. Entre em contato com o administrador." };
   }
   if (process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED?.trim().toLowerCase() !== "true") {
     return { error: "Login com Google não está disponível neste ambiente." };
@@ -82,7 +74,6 @@ export async function signInWithGoogle(): Promise<{ error: string } | void> {
     provider: "google",
     options: {
       redirectTo: `${appOrigin()}/auth/callback`,
-      queryParams: { hd: "efeso.com" },
     },
   });
   if (error || !data.url) {
@@ -96,7 +87,7 @@ export async function signInWithPassword(input: {
   password: string;
 }): Promise<{ error: string } | void> {
   if (!isSupabaseConfigured()) {
-    return { error: "O Supabase local não está configurado." };
+    return { error: "O serviço de acesso ainda não está configurado. Entre em contato com o administrador." };
   }
   const email = input.email.trim().toLowerCase();
   const password = input.password;
@@ -112,9 +103,15 @@ export async function signInWithPassword(input: {
     return { error: publicAuthError(error) };
   }
 
-  const allowed = getAllowedEmailDomains();
-  if (!isAllowedCorporateEmail(email, allowed)) {
-    redirect(routes.accessRestricted);
+  try {
+    const authorization = await getAuthorizedEmail(email);
+    if (!authorization || authorization.status === "disabled" || !isEligibleAccessEmail(email, getAllowedEmailDomains(), authorization.externalAccessApproved)) {
+      const supabase = await createServerSupabaseClient();
+      await supabase.auth.signOut({ scope: "local" });
+      return { error: "Este e-mail não possui autorização de acesso ao SIGNAL." };
+    }
+  } catch {
+    return { error: "Não foi possível verificar sua autorização." };
   }
   redirect(routes.companies);
 }
@@ -124,7 +121,7 @@ export async function signInDemo(kind: "member" | "admin" = "member"): Promise<{
     return { error: "O modo de demonstração não está ativo." };
   }
   if (!isSupabaseConfigured()) {
-    return { error: "O Supabase local não está configurado." };
+    return { error: "O serviço de acesso ainda não está configurado. Entre em contato com o administrador." };
   }
 
   try {
@@ -143,10 +140,13 @@ export async function signOutAction(): Promise<void> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createServerSupabaseClient();
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: "local" });
     } catch {
       // Session may already be gone.
     }
   }
+  // End this browser session even if the remote Auth service cannot be reached.
+  const store = await cookies();
+  for (const cookie of store.getAll()) if (cookie.name.startsWith("sb-") && /auth-token|code-verifier/.test(cookie.name)) store.delete(cookie.name);
   redirect(routes.login);
 }
