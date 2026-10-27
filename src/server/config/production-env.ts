@@ -12,8 +12,6 @@ const REQUIRED_PRODUCTION = [
   "ALLOWED_EMAIL_DOMAINS",
   "TAVILY_API_KEY",
   "LANGUAGE_MODEL_PROVIDER",
-  "OLLAMA_BASE_URL",
-  "OLLAMA_EXTRACTION_MODEL",
   "EXTERNAL_RESEARCH_PROVIDER",
   "NEXT_PUBLIC_APP_URL",
 ] as const;
@@ -32,12 +30,10 @@ export function assertProductionEnv(): { ok: true } | { ok: false; missing: stri
   if ((process.env.DEMO_AUTH_MODE ?? "false").trim().toLowerCase() === "true") {
     missing.push("DEMO_AUTH_MODE must not be true in production");
   }
-  if ((process.env.LANGUAGE_MODEL_PROVIDER ?? "").trim().toLowerCase() !== "ollama") {
-    // OpenAI optional; production default is ollama
-    if ((process.env.LANGUAGE_MODEL_PROVIDER ?? "").trim().toLowerCase() !== "openai") {
-      missing.push("LANGUAGE_MODEL_PROVIDER");
-    }
-  }
+  const provider = process.env.LANGUAGE_MODEL_PROVIDER?.trim().toLowerCase();
+  const modelKeys = provider === "ollama" ? ["OLLAMA_BASE_URL", "OLLAMA_EXTRACTION_MODEL"] : provider === "openai" ? ["OPENAI_API_KEY", "OPENAI_EXTRACTION_MODEL"] : [];
+  if (!modelKeys.length) missing.push("LANGUAGE_MODEL_PROVIDER must be ollama or openai");
+  for (const key of modelKeys) if (!process.env[key]?.trim()) missing.push(key);
   if ((process.env.RESEARCH_WORKER_ENABLED ?? "true").trim().toLowerCase() === "false") {
     missing.push("RESEARCH_WORKER_ENABLED should be true in production (or run worker separately with explicit ops acceptance)");
   }

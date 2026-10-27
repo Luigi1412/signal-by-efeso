@@ -7,8 +7,10 @@ import {listResearchEvents,listSourceCandidates,isTerminalStatus} from "../src/s
 import {loadResearchAssessment} from "../src/server/product/research-assessment";
 import {checkLanguageModelProviderHealth} from "../src/server/ai/language-model-health";
 for(const path of [".env.local",".env"]) if(existsSync(path)) loadEnvFile(path);
-const required=["NEXT_PUBLIC_SUPABASE_URL","SUPABASE_SERVICE_ROLE_KEY","TAVILY_API_KEY","OLLAMA_EXTRACTION_MODEL","SIGNAL_BENCHMARK_WORKSPACE_ID","SIGNAL_BENCHMARK_EMAIL"];
+const provider=process.env.LANGUAGE_MODEL_PROVIDER;
+const required=["NEXT_PUBLIC_SUPABASE_URL","SUPABASE_SERVICE_ROLE_KEY","TAVILY_API_KEY","LANGUAGE_MODEL_PROVIDER","EXTERNAL_RESEARCH_PROVIDER","SIGNAL_BENCHMARK_WORKSPACE_ID","SIGNAL_BENCHMARK_EMAIL",...(provider==="openai"?["OPENAI_API_KEY","OPENAI_EXTRACTION_MODEL"]:["OLLAMA_BASE_URL","OLLAMA_EXTRACTION_MODEL"])];
 async function residentModels(){
+  if(provider!=="ollama")return null;
   try {const response=await fetch(`${process.env.OLLAMA_BASE_URL??"http://127.0.0.1:11434"}/api/ps`,{signal:AbortSignal.timeout(2000)});
     if(!response.ok)return null;const body=await response.json() as {models?:Array<{name:string;size:number;size_vram:number}>};
     return (body.models??[]).map(m=>({name:m.name,bytes:m.size,vramBytes:m.size_vram}));
@@ -17,14 +19,14 @@ async function residentModels(){
 async function main(){
   const missing=required.filter(key=>!process.env[key]?.trim());
   if(missing.length){console.log(JSON.stringify({status:"BLOCKED_EXTERNAL_CONFIGURATION",missing,realRunsStarted:0}));process.exitCode=2;return;}
-  if(process.env.EXTERNAL_RESEARCH_PROVIDER!=="tavily"||process.env.LANGUAGE_MODEL_PROVIDER!=="ollama") throw new Error("Benchmark requires the real Tavily/Ollama configuration.");
+  if(process.env.EXTERNAL_RESEARCH_PROVIDER!=="tavily"||!["ollama","openai"].includes(process.env.LANGUAGE_MODEL_PROVIDER??"")) throw new Error("Benchmark requires real Tavily and an Ollama/OpenAI provider.");
   const query=process.argv[2]?.trim();if(!query)throw new Error("Provide exactly one company query.");
   const email=process.env.SIGNAL_BENCHMARK_EMAIL!.trim().toLowerCase();if(/^demo\.|@signal\.test$/.test(email))throw new Error("Use an explicitly authorized real test identity, not a demo account.");
   const db=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.SUPABASE_SERVICE_ROLE_KEY!,{auth:{persistSession:false,autoRefreshToken:false}});
   const workspaceId=process.env.SIGNAL_BENCHMARK_WORKSPACE_ID!;
   const {data:authorization,error}=await db.from("workspace_authorized_emails").select("status,activated_user_id").eq("workspace_id",workspaceId).eq("email",email).single();
   if(error||authorization?.status!=="active"||!authorization.activated_user_id)throw new Error("Benchmark identity must have completed authorized first access.");
-  const health=await checkLanguageModelProviderHealth({includeSmoke:false});if(!health.reachable||!health.modelInstalled)throw new Error("Ollama/model unavailable.");
+  const health=await checkLanguageModelProviderHealth({includeSmoke:false});if(!health.reachable||!health.modelInstalled)throw new Error("Configured model unavailable.");
   const before=await residentModels();const started=performance.now();const cpu=process.cpuUsage();
   let run=await startExternalCompanyResearch({workspaceId,userId:authorization.activated_user_id,query,selectedDomain:process.argv[3]??null,confirmUnresolved:Boolean(process.argv[3])});
   while(!isTerminalStatus(run.status)&&performance.now()-started<30*60_000){

@@ -55,7 +55,14 @@
     "test:unit": "node scripts/test-unit.mjs",
     "test:db-local": "node tests/local-db.mjs",
     "test:preview-local": "node tests/local-preview-http.mjs",
-    "benchmark:research": "node --import ./scripts/stub-server-only.mjs --import tsx scripts/research-benchmark.ts"
+    "benchmark:research": "node --import ./scripts/stub-server-only.mjs --import tsx scripts/research-benchmark.ts",
+    "app:local": "node scripts/real-local.mjs",
+    "check:real": "node scripts/real-config.mjs",
+    "workspace:init": "tsx scripts/init-real-workspace.ts",
+    "db:plan": "supabase db push --dry-run",
+    "db:apply": "supabase db push",
+    "setup:local": "node scripts/setup-real-local.mjs",
+    "test:runtime": "node --test tests/real-config.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
