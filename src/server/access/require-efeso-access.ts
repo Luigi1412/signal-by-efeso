@@ -47,6 +47,7 @@ async function loadAccess(): Promise<EfesoAccess | { redirectTo: string } | { de
     email: user?.email ?? null,
     allowedDomains,
     membershipRole: membership?.role ?? null,
+    membershipUserBound: Boolean(user && authorization?.activatedUserId === user.id),
     authorization: authorization
       ? { status: authorization.status, role: authorization.role, externalAccessApproved: authorization.externalAccessApproved }
       : null,

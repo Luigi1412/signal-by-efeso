@@ -4,31 +4,28 @@ Inteligência de empresas baseada em evidências, para a EFESO Brasil.
 
 **Versão: 1.0.0** — ver `docs/RELEASE_NOTES_V1.md`.
 
-## Local setup
+## Produto real no Mac
 
-Prerequisites: Node 20+ e Docker (Supabase local).
-
-```bash
-cd signal
-cp .env.development.example .env.local
-# preencha chaves locais
-npm install
-npm run supabase:start
-npm run supabase:reset
-npm run import:efeso-knowledge
-npm run seed:demo   # somente development / DEMO_MODE=true
-npm run dev
-```
-
-Em outro terminal (pesquisa independente do browser):
+Comece em [docs/REAL_LOCAL.md](docs/REAL_LOCAL.md). Esse é o fluxo principal: Auth/Supabase, usuários explicitamente autorizados, Tavily, modelo e worker reais.
 
 ```bash
-npm run worker:research
+npm ci
+npm run setup:local
+# Preencha credenciais somente no .env.local privado.
+# Vincule o projeto, aplique migrations sem reset e autorize os usuários conforme o guia.
+npm run check:real
+npm run app:local
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Abra **http://127.0.0.1:3000/companies** no mesmo computador. `app:local` inicia app + worker e recusa configuração incompleta; não inicia pesquisas automaticamente.
 
-Acesso restrito a `@efeso.com`. Em development com `DEMO_MODE=true` e `DEMO_AUTH_MODE=true`, botões demo provisionam contas sintéticas. Em produção: `DEMO_MODE=false`.
+O domínio EFESO sozinho não concede acesso. Endereços externos exigem aprovação individual explícita na allowlist. Não há senha predefinida nem login demo na tela de entrada.
+
+Sem infraestrutura real, o produto fica **BLOCKED**. Testes locais e preview não constituem aprovação de go-live.
+
+## QA interno
+
+`npm run preview:local` usa exclusivamente cenários fictícios em memória e é opt-in para desenvolvimento. Não é o produto apresentado, não usa Auth real nem persiste pesquisa. O modo real e o seed padrão não carregam fixtures. Não execute `seed:demo` para inicializar o produto real.
 
 ## Produção / self-hosted
 

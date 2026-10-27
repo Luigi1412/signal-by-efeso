@@ -12,6 +12,7 @@ export interface AuthorizedEmailRecord {
   role: WorkspaceRole;
   status: AuthorizedEmailStatus;
   externalAccessApproved: boolean;
+  activatedUserId: string | null;
 }
 
 function normalizeEmail(email: string): string {
@@ -33,7 +34,7 @@ export async function getAuthorizedEmail(email: string): Promise<AuthorizedEmail
 
   const { data, error } = await admin
     .from("workspace_authorized_emails")
-    .select("id, workspace_id, email, role, status, external_access_approved")
+    .select("id, workspace_id, email, role, status, external_access_approved, activated_user_id")
     .eq("workspace_id", workspace.id)
     .eq("email", normalized)
     .maybeSingle();
@@ -47,6 +48,7 @@ export async function getAuthorizedEmail(email: string): Promise<AuthorizedEmail
     role: data.role,
     status: data.status,
     externalAccessApproved: data.external_access_approved,
+    activatedUserId: data.activated_user_id,
   };
 }
 
@@ -78,7 +80,7 @@ export async function upsertAuthorizedEmail(input: {
       },
       { onConflict: "workspace_id,email" },
     )
-    .select("id, workspace_id, email, role, status, external_access_approved")
+    .select("id, workspace_id, email, role, status, external_access_approved, activated_user_id")
     .single();
   if (error) throw error;
   if (!isWorkspaceRole(data.role)) throw new Error("Invalid authorized email role.");
@@ -89,6 +91,7 @@ export async function upsertAuthorizedEmail(input: {
     role: data.role,
     status: data.status as AuthorizedEmailStatus,
     externalAccessApproved: data.external_access_approved,
+    activatedUserId: data.activated_user_id,
   };
 }
 
@@ -107,7 +110,7 @@ export async function markAuthorizedEmailActive(input: {
       activated_user_id: input.userId,
     })
     .eq("id", existing.id)
-    .select("id, workspace_id, email, role, status, external_access_approved")
+    .select("id, workspace_id, email, role, status, external_access_approved, activated_user_id")
     .single();
   if (error) throw error;
   return {
@@ -117,5 +120,6 @@ export async function markAuthorizedEmailActive(input: {
     role: data.role as WorkspaceRole,
     status: data.status as AuthorizedEmailStatus,
     externalAccessApproved: data.external_access_approved,
+    activatedUserId: data.activated_user_id,
   };
 }

@@ -135,3 +135,8 @@ test("an unconfirmed identity or an empty boundary configuration cannot use an e
   assert.equal(decideAccess({ ...input, allowedDomains: [] }).kind, "config_missing");
   assert.equal(decideAccess({ ...input, email: "another@gmail.com", authorization: null }).kind, "domain_denied");
 });
+
+
+test("an existing active membership without a confirmed activation binding must reactivate atomically", () => {
+  assert.equal(decideAccess({ authenticated:true,emailConfirmed:true,email:"member@efeso.com",allowedDomains:allowed,membershipRole:"member",membershipUserBound:false,authorization:{status:"active",role:"member"} }).kind,"needs_activation");
+});

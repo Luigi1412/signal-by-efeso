@@ -32,6 +32,7 @@ export function decideAccess(input: {
   email: string | null | undefined;
   allowedDomains: readonly string[];
   membershipRole: string | null;
+  membershipUserBound?: boolean;
   /** null = email not on allowlist */
   authorization: { status: AuthorizedEmailStatus; role: WorkspaceRole; externalAccessApproved?: boolean } | null;
 }): AccessDecision {
@@ -54,7 +55,7 @@ export function decideAccess(input: {
     return { kind: "disabled", email, emailDomain };
   }
 
-  if (input.membershipRole && input.authorization.status === "active" && input.membershipRole === input.authorization.role) {
+  if (input.membershipUserBound !== false && input.membershipRole && input.authorization.status === "active" && input.membershipRole === input.authorization.role) {
     return {
       kind: "authorized",
       email,
