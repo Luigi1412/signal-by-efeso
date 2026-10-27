@@ -1,7 +1,8 @@
 /** Start the existing real app and worker together, without demo switches or credential logging. */
 import {spawn} from 'node:child_process';
 import {checkRealConfiguration} from './real-config.mjs';
-const result=await checkRealConfiguration();
+const configured=await checkRealConfiguration({network:false});
+const result=configured.ready ? await checkRealConfiguration() : configured;
 if(!result.ready){
  console.error('PRODUCT READY: BLOCKED — configuração real incompleta. Execute npm run check:real.');
  for(const row of result.rows.filter(r=>!r.ready))console.error(`${row.name}: ${row.setting}`);
