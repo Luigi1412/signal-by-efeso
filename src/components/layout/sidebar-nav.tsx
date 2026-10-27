@@ -39,7 +39,7 @@ export function SidebarNav({ items, onNavigate }: SidebarNavProps) {
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "group relative flex h-10 items-center gap-3 rounded-md px-3 text-[13px] font-medium transition-colors outline-none",
+              "signal-nav-link group relative flex h-11 items-center gap-3 rounded-md px-3 text-[13px] font-medium transition-colors outline-none",
               "focus-visible:ring-2 focus-visible:ring-ring/40",
               active
                 ? "bg-card text-foreground"

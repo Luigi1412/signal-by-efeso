@@ -244,7 +244,7 @@ export const ptBR = {
   },
   companies: {
     title: "Empresas",
-    description: "Histórico de empresas pesquisadas e análises realizadas.",
+    description: "O que mudou nas empresas. O que isso pode significar para a operação.",
     showing: "Exibindo {shown} empresas.",
     empty: "Nenhuma empresa analisada ainda.",
     emptyCta: "Iniciar primeira pesquisa",
@@ -322,7 +322,7 @@ export const ptBR = {
     instructions: "Instruções adicionais",
     instructionsPlaceholder: "Priorizar movimentos recentes ligados a operações e supply chain.",
     hint: "O nome já é suficiente. Website e país são opcionais.",
-    cta: "Pesquisar",
+    cta: "Pesquisar empresa",
   },
   resolve: {
     title: "Confirmar empresa",
@@ -1435,12 +1435,12 @@ export const ptBR = {
     evaluatingFit: "Avaliando aderência EFESO",
     phases: {
       identifying: "Identificando empresa",
-      findingSources: "Buscando fontes públicas",
+      findingSources: "Pesquisando fontes",
       validatingSources: "Selecionando fontes relevantes",
       processingDocuments: "Analisando evidências",
       extractingFacts: "Extraindo e validando fatos",
-      generatingSignals: "Identificando movimentos",
-      buildingIntelligence: "Avaliando interpretação e aderência EFESO",
+      generatingSignals: "Analisando movimentos",
+      buildingIntelligence: "Avaliando aderência EFESO",
       identifyingOpportunities: "Avaliando oportunidades sustentadas",
       preparingNextSteps: "Preparando resultado",
     },

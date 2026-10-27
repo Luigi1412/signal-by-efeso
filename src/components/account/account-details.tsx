@@ -6,7 +6,7 @@ export function AccountDetails({ rows }: { rows: { label: string; value: string 
   return (
     <PageContainer width="narrow">
       <PageHeader title={ui.accountPage.title} description={ui.accountPage.description} className="mb-8" />
-      <dl className="divide-y border-y">
+      <dl className="account-panel divide-y">
         {rows.map((row) => (
           <div key={row.label} className="flex flex-col gap-1 py-5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
             <dt className="text-sm text-muted-foreground">{row.label}</dt>

@@ -25,6 +25,7 @@ export default async function CompaniesPage() {
   return (
     <PageContainer>
       <PageHeader
+        eyebrow="Inteligência de empresas"
         title={ui.companies.title}
         description={ui.companies.description}
         className="mb-8"

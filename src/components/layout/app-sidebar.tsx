@@ -28,8 +28,8 @@ interface AppSidebarProps {
 
 export function AppSidebar({ className, onNavigate, user, showAdminNav = false }: AppSidebarProps) {
   return (
-    <aside className={cn("flex h-full w-52 flex-col border-r border-border/60 bg-sidebar print:hidden", className)} data-print-hide>
-      <div className="flex h-24 items-center px-6">
+    <aside className={cn("signal-sidebar flex h-full w-56 flex-col print:hidden", className)} data-print-hide>
+      <div className="flex h-32 items-center px-6">
         <Brand />
       </div>
 

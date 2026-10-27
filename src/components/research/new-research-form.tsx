@@ -84,7 +84,7 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
       setError(null);
       const domain = extra.selectedDomain ?? (website.trim() ? normalizeDomain(website) : undefined);
       const result = await start({
-        query: companyName.trim(),
+        query: extra.query?.trim() || companyName.trim(),
         country: normalizeCountry(country),
         existingSlug: extra.existingSlug,
         selectedDomain: domain,
@@ -99,7 +99,7 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="research-form flex flex-col gap-8">
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
         <div className="grid gap-2">
           <Label htmlFor="company-name">
@@ -115,17 +115,18 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
             placeholder="Pesquise pelo nome da empresa…"
             autoComplete="off"
             aria-invalid={touched && !isValid}
-            className="h-16 rounded-lg border-border bg-card pl-12 text-base shadow-none md:text-lg"
+            aria-describedby="company-name-help"
+            className="h-20 rounded-md border-border bg-card pl-12 text-base shadow-none md:text-lg"
             autoFocus
           /></div>
           {touched && !isValid ? (
-            <p className="text-xs text-conflict">{ui.newAnalysis.companyNameError}</p>
+            <p id="company-name-help" role="alert" className="text-xs text-conflict">{ui.newAnalysis.companyNameError}</p>
           ) : (
-            <p className="text-xs text-muted-foreground">{ui.newAnalysis.companyNameHint}</p>
+            <p id="company-name-help" className="text-xs text-muted-foreground">{ui.newAnalysis.companyNameHint}</p>
           )}
         </div>
 
-        <details className="group"><summary className="w-fit cursor-pointer text-sm text-muted-foreground">Opções avançadas</summary><div className="mt-5 grid gap-6 sm:grid-cols-2">
+        <details className="group"><summary className="w-fit cursor-pointer text-sm text-muted-foreground">Mais opções</summary><div className="mt-5 grid gap-6 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label htmlFor="company-website">
               {ui.newAnalysis.website}{" "}
@@ -166,7 +167,7 @@ export function NewResearchForm({ initialCompanyName = "" }: { initialCompanyNam
         </details>
 
         <div className="flex flex-col-reverse items-start justify-between gap-4 sm:flex-row sm:items-center">
-          <p className={`text-xs ${error ? "text-conflict" : "text-muted-foreground"}`}>{error ?? ui.newAnalysis.hint}</p>
+          <p role={error ? "alert" : undefined} className={`text-xs ${error ? "text-conflict" : "text-muted-foreground"}`}>{error ?? ui.newAnalysis.hint}</p>
           <Button type="submit" variant="brand" size="lg" className="h-12 px-7" disabled={pending}>
             {pending ? "Identificando empresa…" : ui.newAnalysis.cta}
             <ArrowRight data-icon="inline-end" />

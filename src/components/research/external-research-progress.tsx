@@ -18,17 +18,16 @@ import {
 } from "@/server/actions/external-research-actions";
 import { RESEARCH_PHASES } from "@/server/external-research/types";
 
-const PHASE_LABELS: Record<(typeof RESEARCH_PHASES)[number]["labelKey"], string> = {
-  identifying: ui.externalResearch.phases.identifying,
-  findingSources: ui.externalResearch.phases.findingSources,
-  validatingSources: ui.externalResearch.phases.validatingSources,
-  processingDocuments: ui.externalResearch.phases.processingDocuments,
-  extractingFacts: ui.externalResearch.phases.extractingFacts,
-  generatingSignals: ui.externalResearch.phases.generatingSignals,
-  buildingIntelligence: ui.externalResearch.phases.buildingIntelligence,
-  identifyingOpportunities: ui.externalResearch.phases.identifyingOpportunities,
-  preparingNextSteps: ui.externalResearch.phases.preparingNextSteps,
-};
+// Group existing pipeline states for members; never synthesize progress or percentages.
+const MEMBER_PHASES = [
+  { statuses: ["queued", "resolving_entity"], label: "Identificando empresa" },
+  { statuses: ["discovering_sources"], label: "Pesquisando fontes" },
+  { statuses: ["reviewing_sources"], label: "Selecionando fontes relevantes" },
+  { statuses: ["ingesting_sources", "extracting_claims"], label: "Extraindo e validando fatos" },
+  { statuses: ["generating_signals"], label: "Analisando movimentos" },
+  { statuses: ["generating_intelligence", "generating_opportunities"], label: "Avaliando aderência EFESO" },
+  { statuses: ["generating_actions"], label: "Preparando resultado" },
+];
 
 function phaseDetail(view: ResearchView, status: (typeof RESEARCH_PHASES)[number]["status"]): string | null {
   if (status === "discovering_sources" && view.sourceCount > 0) {
@@ -84,7 +83,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
     return () => clearTimeout(timer);
   }, [view.id, view.status, tickKey, preview, tick]);
 
-  const currentIndex = RESEARCH_PHASES.findIndex((phase) => phase.status === view.status);
+  const currentIndex = MEMBER_PHASES.findIndex(phase => phase.statuses.includes(view.status));
   const done = view.status === "completed" || view.status === "partial";
   const failed = view.status === "failed" || view.status === "cancelled";
 
@@ -98,7 +97,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
             ? (view.outcome ? researchOutcomeMemberCopy(view.outcome).title : ui.externalResearch.completedHeadline)
             : failed
               ? ui.externalResearch.failed
-              : ui.externalResearch.headline}
+              : `Pesquisando ${view.query}`}
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
           {done
@@ -112,7 +111,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
 
         <div className="mt-7 border-l-2 border-brand pl-5" role="status" aria-live="polite">
           <p className="eyebrow">{done ? "Pesquisa concluída" : failed ? "Pesquisa interrompida" : "Agora"}</p>
-          <p className="mt-2 text-xl font-medium tracking-tight">{done ? "Resultado disponível" : failed ? "Consulte os detalhes abaixo" : currentIndex >= 0 ? PHASE_LABELS[RESEARCH_PHASES[currentIndex]!.labelKey] : view.status === "needs_user_resolution" ? "Confirme a empresa" : "Preparando pesquisa"}</p>
+          <p className="mt-2 text-xl font-medium tracking-tight">{done ? "Resultado disponível" : failed ? "Consulte os detalhes abaixo" : currentIndex >= 0 ? MEMBER_PHASES[currentIndex]!.label : view.status === "needs_user_resolution" ? "Confirme a empresa" : "Preparando pesquisa"}</p>
           {!done && !failed && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Você pode navegar pelo SIGNAL. O progresso é atualizado enquanto esta página estiver aberta.</p>}
         </div>
 
@@ -190,14 +189,13 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
               </div>
             )}
           </div>
-        ) : (
-          <ol className="mt-8 flex flex-col">
-            {RESEARCH_PHASES.map((phase, index) => {
-              if (!done && index > Math.max(currentIndex, 0) + 1) return null;
-              const status = done || index < currentIndex ? "done" : index === currentIndex ? "active" : "pending";
-              const detail = status === "active" || status === "done" ? phaseDetail(view, phase.status) : null;
+        ) : currentIndex >= 0 && !done && !failed ? (
+          <ol className="mt-8 flex flex-col" aria-label="Etapas da pesquisa">
+            {MEMBER_PHASES.map((phase, index) => {
+              const status = index < currentIndex ? "done" : index === currentIndex ? "active" : "pending";
+              const detail = status === "active" ? phaseDetail(view, view.status as (typeof RESEARCH_PHASES)[number]["status"]) : null;
               return (
-                <li key={phase.status} aria-current={status === "active" ? "step" : undefined} className={cn("relative flex gap-4", status === "pending" && "text-muted-foreground")}>
+                <li key={phase.label} aria-current={status === "active" ? "step" : undefined} className={cn("relative flex gap-4", status === "pending" && "text-muted-foreground")}>
                   <div className="flex flex-col items-center">
                     <span
                       className={cn(
@@ -210,15 +208,14 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
                       {status === "done" ? <Check className="size-3" strokeWidth={2.5} /> : null}
                       {status === "active" ? <span className="size-1.5 rounded-full bg-foreground" /> : null}
                     </span>
-                    {index < RESEARCH_PHASES.length - 1 ? (
+                    {index < MEMBER_PHASES.length - 1 ? (
                       <span className={cn("w-px flex-1", status === "done" ? "bg-foreground/40" : "bg-border")} />
                     ) : null}
                   </div>
                   <div className="pb-4">
-                    {status === "pending" && <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Em seguida</p>}
-                    <div className={cn("text-sm", status === "active" ? "font-semibold text-foreground" : "text-muted-foreground")}>{PHASE_LABELS[phase.labelKey]}</div>
+                    <div className={cn("text-sm", status === "active" ? "font-semibold text-foreground" : "text-muted-foreground")}>{phase.label}</div>
                     {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
-                    {status === "active" && phase.status === "generating_intelligence" ? (
+                    {status === "active" && view.status === "generating_intelligence" ? (
                       <p className="mt-1 text-xs text-muted-foreground">{ui.externalResearch.evaluatingFit}</p>
                     ) : null}
                   </div>
@@ -226,7 +223,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
               );
             })}
           </ol>
-        )}
+        ) : null}
 
         {(done || view.initialAnalysisAvailable) && view.companySlug ? (
           <div className="mt-8 flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">
@@ -235,10 +232,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
                 {done ? ui.externalResearch.completedHeadline : ui.externalResearch.initialAnalysisAvailable}
               </div>
               <div className="text-xs text-muted-foreground">
-                {view.acceptedCount} {ui.externalResearch.acceptedSources}
-                {view.counts
-                  ? ` · ${view.counts.claims} ${ui.externalResearch.claims} · ${view.counts.signals} ${ui.externalResearch.signals} · ${view.counts.opportunities} ${ui.externalResearch.opportunities}`
-                  : ""}
+                {[view.acceptedCount > 0 ? `${view.acceptedCount} fontes retidas` : null, (view.counts?.claims ?? 0) > 0 ? `${view.counts?.claims} fatos validados` : null].filter(Boolean).join(" · ")}
               </div>
             </div>
             <Button asChild variant="brand">
@@ -270,7 +264,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
       </div>
 
       <aside className="lg:pt-14">
-        <div className="border-y">
+        {view.sourceCount > 0 && <div className="border-y">
           <div className="py-3 text-sm font-semibold">{ui.externalResearch.sourcesReviewed}</div>
           <dl className="divide-y border-t">
             <div className="flex justify-between py-3 text-sm">
@@ -289,7 +283,7 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
               </div>
             ) : null}
           </dl>
-        </div>
+        </div>}
         {view.sources.length > 0 ? (
           <div className="mt-6">
             <p className="text-sm font-semibold">{ui.externalResearch.analyzedSources}</p>

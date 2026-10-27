@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 
 export default function NewResearchPage() {
   return (
-    <PageContainer width="narrow">
+    <PageContainer width="narrow" className="research-start">
+      <p className="eyebrow mb-5">Nova pesquisa</p>
       <PageHeader title={ui.newAnalysis.headline} description={ui.newAnalysis.description} className="mb-8" />
       <NewResearchForm />
     </PageContainer>

@@ -203,3 +203,27 @@
   summary { border-radius: 3px; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 }
+
+/* SIGNAL: quiet paper canvas, ink navigation, editorial hierarchy. */
+:root { --background: #f7f7f2; --foreground:#202b2b; --muted:#eceee8; --muted-foreground:#626e6a; --border:#dcdfd7; --brand:#b43b32; --brand-muted:#f6e9e5; }
+.signal-sidebar { background:#1c2a29; color:#f3f4ec; --foreground:#f3f4ec; --background:#1c2a29; --muted-foreground:#a3b0aa; --card:#31413e; --sidebar-accent:#31413e; --border:#3a4944; }
+.signal-sidebar .signal-brand { margin-left:10px; }
+.signal-brand > span:first-child { background:transparent; width:15px; }
+.signal-brand > span:first-child > span { width:5px; height:26px; border-radius:0; background:var(--brand); }
+.signal-brand > span:last-child > span:first-child { font-size:21px; letter-spacing:.09em; font-weight:550; }
+.signal-brand > span:last-child > span:last-child { font-size:10px; letter-spacing:.08em; }
+.signal-sidebar .signal-nav-link { border-radius:4px; }
+.signal-sidebar .signal-nav-link[aria-current="page"] { background:#31413e; }
+.signal-sidebar .signal-nav-link[aria-current="page"] > span[aria-hidden] { background:#df8c79; }
+.preview-notice { padding:9px 24px; background:#e8ece4; color:#4c5951; font-size:11px; line-height:1.6; text-align:right; border-bottom:1px solid #d4dbd0; }
+.preview-notice strong { font-weight:600; letter-spacing:.07em; margin-right:10px; font-size:10px; }
+.preview-tools { margin-top:48px; padding-top:20px; border-top:1px solid var(--border); font-size:12px; color:var(--muted-foreground); }
+.preview-tools summary { width:fit-content; cursor:pointer; }
+.preview-tools fieldset { margin-top:20px; border:0; padding:0; }
+.research-start { padding-top:80px; }
+.research-start h1 { max-width:15ch; font-size:clamp(36px,4vw,54px); font-weight:450; line-height:1.12; letter-spacing:-.045em; }
+.research-start .research-form { margin-top:48px; }
+.research-form form > div:last-child { align-items:flex-start; flex-direction:column-reverse; gap:18px; }
+.research-form input:focus-visible { border-color:var(--foreground); --tw-ring-color:transparent; }
+.account-panel { background:var(--card); padding:8px 28px; border:1px solid var(--border); border-radius:5px; }
+@media(max-width:640px) { .preview-notice { text-align:left; padding-inline:20px; } .research-start { padding-top:44px; } .account-panel { padding-inline:18px; } }

@@ -12,7 +12,7 @@ interface BrandProps {
 /** "Signal / by EFESO" wordmark. EFESO stays secondary by design. */
 export function Brand({ size = "sm", href = routes.companies, className }: BrandProps) {
   const content = (
-    <span className={cn("inline-flex items-center gap-2.5", className)}>
+    <span className={cn("signal-brand inline-flex items-center gap-2.5", className)}>
       <span
         aria-hidden
         className={cn(

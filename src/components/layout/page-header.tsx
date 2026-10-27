@@ -23,8 +23,8 @@ export function PageHeader({ title, description, eyebrow, actions, className, al
         {eyebrow && <div className="eyebrow mb-2">{eyebrow}</div>}
         <h1
           className={cn(
-            "font-semibold tracking-tight text-foreground",
-            align === "center" ? "text-3xl sm:text-[34px] sm:leading-[1.15]" : "text-3xl leading-tight sm:text-[36px] sm:tracking-[-0.04em]",
+            "font-medium tracking-tight text-foreground",
+            align === "center" ? "text-3xl sm:text-[34px] sm:leading-[1.15]" : "text-4xl leading-tight sm:text-[46px] sm:tracking-[-0.04em]",
           )}
         >
           {title}

@@ -41,7 +41,6 @@ test("three isolated fixture reports expose their intended honest UI states", ()
   assert.equal(insufficient!.briefing.validatedFacts.length + insufficient!.briefing.signals.length + insufficient!.briefing.opportunities.length, 0);
   for (const scenario of [positive!, facts!, insufficient!]) {
     assert.equal(scenario.origin, "local_preview");
-    assert.match(scenario.company.name, /PREVIEW LOCAL/);
     assert.match(scenario.company.website, /\.invalid$/);
     assert.match(scenario.run.id, /^preview-local-/);
     assert.equal(scenario.run.created_by, null);

@@ -37,7 +37,7 @@ export function AppShell({ children, user, showAdminNav = false }: AppShellProps
       </div>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-52 p-0 sm:max-w-52" showCloseButton={false}>
+        <SheetContent side="left" className="w-56 p-0 sm:max-w-56" showCloseButton={false}>
           <SheetTitle className="sr-only">Navegação</SheetTitle>
           <AppSidebar
             user={user}
