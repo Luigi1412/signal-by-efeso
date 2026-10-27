@@ -7,17 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ui } from "@/i18n";
 import {
-  signInDemo,
   signInWithGoogle,
   signInWithMagicLink,
   signInWithPassword,
 } from "@/server/actions/auth-actions";
 
 export function LoginForm({
-  demoMode,
+  available = true,
   googleEnabled,
 }: {
-  demoMode: boolean;
+  available?: boolean;
   googleEnabled: boolean;
 }) {
   const [pending, startTransition] = useTransition();
@@ -32,16 +31,14 @@ export function LoginForm({
     setInfo(null);
     setStatus("authenticating");
     startTransition(async () => {
-      const result = await action();
-      if (result && "error" in result && result.error) {
-        setError(result.error);
+      try {
+        const result = await action();
+        if (result && "error" in result) setError(result.error);
+        if (result && "ok" in result) setInfo(result.message);
+      } catch {
+        setError("Não foi possível concluir o acesso. Tente novamente.");
+      } finally {
         setStatus("idle");
-        return;
-      }
-      if (result && "ok" in result && result.ok) {
-        setInfo(result.message);
-        setStatus("idle");
-        return;
       }
     });
   }
@@ -53,8 +50,8 @@ export function LoginForm({
           type="button"
           variant="brand"
           size="lg"
-          className="h-11 w-full"
-          disabled={pending}
+          className="h-12 w-full"
+          disabled={pending || !available}
           onClick={() => run(() => signInWithGoogle())}
         >
           {ui.login.continueGoogle}
@@ -90,9 +87,9 @@ export function LoginForm({
             name="email"
             type="email"
             autoComplete="username"
-            placeholder="nome@efeso.com"
+            placeholder="seu@email.com"
             required
-            disabled={pending}
+            disabled={pending || !available}
           />
         </div>
 
@@ -105,12 +102,12 @@ export function LoginForm({
               type="password"
               autoComplete="current-password"
               required
-              disabled={pending}
+              disabled={pending || !available}
             />
           </div>
         ) : null}
 
-        <Button type="submit" variant={googleEnabled ? "outline" : "brand"} size="lg" className="h-11 w-full justify-between px-4 text-sm" disabled={pending}>
+        <Button type="submit" variant={googleEnabled ? "outline" : "brand"} size="lg" className="h-12 w-full justify-between px-4 text-sm" disabled={pending || !available}>
           {pending || status === "authenticating"
             ? ui.login.authenticating
             : showPassword
@@ -126,7 +123,7 @@ export function LoginForm({
         <button
           type="button"
           className="text-left text-muted-foreground underline-offset-4 hover:underline"
-          disabled={pending}
+          disabled={pending || !available}
           onClick={() => {
             setShowPassword((value) => !value);
             setError(null);
@@ -138,7 +135,7 @@ export function LoginForm({
         <button
           type="button"
           className="text-left text-muted-foreground underline-offset-4 hover:underline"
-          disabled={pending}
+          disabled={pending || !available}
           onClick={() => {
             setMode((value) => (value === "first" ? "signin" : "first"));
             setShowPassword(false);
@@ -150,20 +147,8 @@ export function LoginForm({
         </button>
       </div>
 
-      {demoMode ? (
-        <div className="flex flex-col gap-2 border-t pt-4">
-          <p className="text-xs text-muted-foreground">{ui.login.demoHint}</p>
-          <Button type="button" variant="outline" disabled={pending} onClick={() => run(() => signInDemo("member"))}>
-            {ui.login.demoMember}
-          </Button>
-          <Button type="button" variant="outline" disabled={pending} onClick={() => run(() => signInDemo("admin"))}>
-            {ui.login.demoAdmin}
-          </Button>
-        </div>
-      ) : null}
-
-      {info ? <p className="text-xs text-muted-foreground">{info}</p> : null}
-      {error ? <p className="text-xs text-conflict">{error}</p> : null}
+      {info ? <p role="status" className="text-sm leading-relaxed text-muted-foreground">{info}</p> : null}
+      {error ? <p role="alert" className="text-sm leading-relaxed text-conflict">{error}</p> : null}
     </div>
   );
 }

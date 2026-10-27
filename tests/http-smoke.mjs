@@ -16,7 +16,11 @@ try {
     assert.match(response.headers.get("location")??"",/\/login/);
   }
   const login=await fetch(`http://127.0.0.1:${port}/login`,{signal:AbortSignal.timeout(10000)});
-  assert.equal(login.status,200);assert.match(await login.text(),/<html/);
+  assert.equal(login.status,200);const loginHtml=await login.text();assert.match(loginHtml,/<html/);
+  assert.ok(loginHtml.includes("Entre no SIGNAL"));
+  assert.ok(!loginHtml.includes("Entrar como membro de demonstração"));
+  assert.ok(!loginHtml.includes("Horizonte Industrial"));
+  assert.ok(!loginHtml.includes("PREVIEW LOCAL"));
   const callback=await fetch(`http://127.0.0.1:${port}/auth/callback?next=https://evil.example`,{redirect:"manual",signal:AbortSignal.timeout(10000)});
   assert.equal(callback.status,307);assert.equal(new URL(callback.headers.get("location")).pathname,"/companies");
   assert.notEqual(new URL(callback.headers.get("location")).hostname,"evil.example");

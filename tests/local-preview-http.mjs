@@ -97,6 +97,10 @@ try {
     const { response } = await read("/preview", headers);
     assert.equal(response.status, 404, `non-local preview request: ${JSON.stringify(headers)}`);
   }
+  const realLogin = await read("/login");
+  assert.equal(realLogin.response.status,200);
+  assert.ok(realLogin.html.includes("Entre no SIGNAL"));
+  for(const marker of ["Entrar como membro de demonstração","Entrar como administrador de demonstração","Horizonte Industrial","PREVIEW LOCAL"])assert.ok(!realLogin.html.includes(marker),`real login must not expose ${marker}`);
   const protectedPage = await read("/companies");
   assert.equal(protectedPage.response.status, 307);
   assert.match(protectedPage.response.headers.get("location"), /\/login/);

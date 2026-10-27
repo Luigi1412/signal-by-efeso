@@ -32,6 +32,7 @@ export interface CompanyHistoryRow {
   signalCount: number;
   opportunityCount: number;
   demoOnly: boolean;
+  primaryMovement?: string | null;
 }
 
 export async function listCompanyHistory(): Promise<CompanyHistoryRow[]> {
@@ -93,6 +94,7 @@ export async function listCompanyHistory(): Promise<CompanyHistoryRow[]> {
       outcomeLabel: memberOutcomeListLabel(outcome, latestRun?.status ?? null),
       runStatus: latestRun?.status ?? null,
       signalCount: assessment?.qualifiedSignalCount ?? 0,
+      primaryMovement: outcome === "signal_found" ? companySignals.find(signal => assessment?.qualifiedSignalIds.includes(signal.id))?.title ?? null : null,
       opportunityCount: visibleOpportunities.filter(opportunity=>Array.isArray(latestRun?.resolution_payload.supported_opportunity_ids) && latestRun.resolution_payload.supported_opportunity_ids.includes(opportunity.id)).length,
       demoOnly,
     });

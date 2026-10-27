@@ -227,3 +227,14 @@
 .research-form input:focus-visible { border-color:var(--foreground); --tw-ring-color:transparent; }
 .account-panel { background:var(--card); padding:8px 28px; border:1px solid var(--border); border-radius:5px; }
 @media(max-width:640px) { .preview-notice { text-align:left; padding-inline:20px; } .research-start { padding-top:44px; } .account-panel { padding-inline:18px; } }
+
+.login-page { min-height:100dvh; display:grid; grid-template-columns:minmax(0,1fr) minmax(440px,1fr); }
+.login-introduction { display:flex; flex-direction:column; justify-content:space-between; padding:48px 10%; background:#1c2a29; color:#f3f4ec; --foreground:#f3f4ec; --muted-foreground:#adb9b1; }
+.login-introduction > div { padding-block:80px; max-width:510px; }
+.login-introduction h1 { font-size:clamp(38px,3.4vw,56px); font-weight:450; letter-spacing:-.045em; line-height:1.13; margin:24px 0; }
+.login-introduction > div > p:last-child { max-width:37ch; font-size:15px; line-height:1.8; color:#adb9b1; }
+.login-signature { font-size:11px; color:#adb9b1; }
+.login-access { display:flex; align-items:center; justify-content:center; padding:48px; }
+.login-access h2 { font-size:34px; letter-spacing:-.04em; font-weight:450; }
+.login-mobile-brand { display:none; }
+@media(max-width:850px) { .login-page { display:block; } .login-introduction { display:none; } .login-access { min-height:100dvh; position:relative; padding:140px 28px 60px; } .login-mobile-brand { display:block; position:absolute; top:36px; left:28px; } }

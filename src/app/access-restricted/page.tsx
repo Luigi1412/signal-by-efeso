@@ -70,7 +70,7 @@ export default async function AccessRestrictedPage({
       </main>
 
       <footer className="flex h-14 items-center px-6 text-xs text-muted-foreground sm:px-10">
-        <span>{ui.demo.prototypeVersion}</span>
+        <span>SIGNAL by EFESO · Uso interno</span>
       </footer>
     </div>
   );
