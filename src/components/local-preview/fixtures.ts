@@ -112,6 +112,7 @@ export function createPreviewSession(slug: ScenarioSlug = "horizonte-industrial"
     tick: async () => ({ ok: true, run: current }),
     cancel: async () => { current = makeView("cancelled"); return { ok: true }; },
     resolve: async () => { current = makeView("discovering_sources"); return { ok: true, runId: current.id }; },
+    resume: async () => { current = makeView("extracting_claims"); return { ok: true, run: current }; },
   };
   return { actions, initial: current, setPhase: (status: ExternalResearchStatus) => { current = makeView(status); return current; } };
 }

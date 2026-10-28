@@ -339,9 +339,13 @@ export async function resumeExternalResearch(workspaceId: string, runId: string,
 async function inferResumeStatus(run: ExternalResearchRunRow): Promise<ExternalResearchRunRow["status"]> {
   if (!run.analysis_id) return "extracting_claims";
   const candidates = await listCandidatesForAnalysis(run.analysis_id);
-  if (candidates.some((row) => row.status === "pending_validation")) return "extracting_claims";
+  // An interrupted claim extraction leaves zero candidates; do not skip ahead to signals.
+  if (candidates.length === 0 || candidates.some((row) => row.status === "pending_validation")) {
+    return "extracting_claims";
+  }
   const signalCandidates = await listSignalCandidatesForAnalysis(run.analysis_id);
   if (
+    signalCandidates.length === 0 ||
     signalCandidates.some(
       (row) =>
         row.status === "pending_validation" ||
@@ -353,7 +357,7 @@ async function inferResumeStatus(run: ExternalResearchRunRow): Promise<ExternalR
   ) {
     return "generating_signals";
   }
-  return "generating_signals";
+  return "generating_intelligence";
 }
 
 function normalizeOfficialDomain(value: string | null | undefined): string {

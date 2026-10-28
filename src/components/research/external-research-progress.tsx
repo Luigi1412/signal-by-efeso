@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import {
   cancelExternalResearchAction,
   resolveResearchEntityAction,
+  resumeExternalResearchAction,
   startExternalResearchAction,
   tickExternalResearchAction,
   type ResearchView,
@@ -63,10 +64,12 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
   const resolve = preview?.resolve ?? resolveResearchEntityAction;
   const start = preview?.start ?? startExternalResearchAction;
   const cancel = preview?.cancel ?? cancelExternalResearchAction;
+  const resume = preview?.resume ?? resumeExternalResearchAction;
   const [view, setView] = useState(initial);
   const [tickKey, setTickKey] = useState(0);
   const [pending, startTransition] = useTransition();
   const [manualDomain, setManualDomain] = useState("");
+  const [pollError, setPollError] = useState<string | null>(null);
 
   useEffect(() => {
     if (preview) return;
@@ -74,12 +77,21 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
     if (terminal) return;
     const timer = setTimeout(() => {
       startTransition(async () => {
-        const result = await tick(view.id);
-        if (result.ok) setView(result.run);
-        setTickKey((value) => value + 1);
-
+        try {
+          const result = await tick(view.id);
+          if (result.ok) {
+            setView(result.run);
+            setPollError(null);
+          } else {
+            setPollError(result.error);
+          }
+        } catch {
+          setPollError("A atualização do progresso falhou temporariamente. Tentando novamente…");
+        } finally {
+          setTickKey((value) => value + 1);
+        }
       });
-    }, 2000);
+    }, 4000);
     return () => clearTimeout(timer);
   }, [view.id, view.status, tickKey, preview, tick]);
 
@@ -244,6 +256,37 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
           </div>
         ) : null}
 
+        {pollError && !failed ? (
+          <p role="status" className="mt-4 text-xs text-muted-foreground">{pollError}</p>
+        ) : null}
+
+        {failed ? (
+          <Button
+            type="button"
+            variant="brand"
+            className="mt-6"
+            disabled={pending}
+            onClick={() => {
+              startTransition(async () => {
+                try {
+                  const result = await resume(view.id);
+                  if (result.ok) {
+                    setView(result.run);
+                    setPollError(null);
+                    setTickKey((value) => value + 1);
+                  } else {
+                    setPollError(result.error);
+                  }
+                } catch {
+                  setPollError("Não foi possível retomar a pesquisa. Tente novamente.");
+                }
+              });
+            }}
+          >
+            {ui.externalResearch.resume}
+          </Button>
+        ) : null}
+
         {!done && !failed && view.status !== "needs_user_resolution" ? (
           <Button
             type="button"
@@ -252,9 +295,13 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
             disabled={pending}
             onClick={() => {
               startTransition(async () => {
-                await cancel(view.id);
-                const next = await tick(view.id);
-                if (next.ok) setView(next.run);
+                try {
+                  await cancel(view.id);
+                  const next = await tick(view.id);
+                  if (next.ok) setView(next.run);
+                } catch {
+                  setPollError("Não foi possível cancelar a pesquisa.");
+                }
               });
             }}
           >

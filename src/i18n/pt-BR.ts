@@ -1415,6 +1415,7 @@ export const ptBR = {
     completedSupporting: "A pesquisa pública foi concluída. Abra a empresa para ver o resumo.",
     partialMessage: "Pesquisa concluída com algumas fontes indisponíveis.",
     failed: "Não foi possível concluir a pesquisa.",
+    resume: "Retomar pesquisa",
     cancel: "Cancelar pesquisa",
     sourcesReviewed: "Fontes analisadas",
     analyzedSources: "Fontes analisadas",

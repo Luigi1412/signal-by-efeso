@@ -58,7 +58,14 @@ export async function executeOwnedPhase(
     if (latest?.status === "cancelled" || latest?.worker_id !== owner) return latest ?? existing;
     if (controller.signal.aborted && latest?.worker_id === owner) {
       const db = createPipelineAdminClient();
-      const {error:failure} = await db.from("external_research_runs").update({status:"failed",failure_code:"PIPELINE_VALIDATION_FAILED",failure_reason:"A etapa excedeu o prazo ou perdeu a autorização de execução. A pesquisa pode ser retomada.",completed_at:new Date().toISOString()}).eq("id",runId).eq("worker_id",owner).neq("status","cancelled");
+      const reason = controller.signal.reason;
+      const reasonText = reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "";
+      const failureReason = reasonText === "RESEARCH_PHASE_TIMEOUT"
+        ? "A etapa excedeu o prazo de execução. A pesquisa pode ser retomada."
+        : reasonText === "RESEARCH_LEASE_UNAVAILABLE"
+          ? "A autorização de execução ficou indisponível durante a etapa. A pesquisa pode ser retomada."
+          : "A etapa excedeu o prazo ou perdeu a autorização de execução. A pesquisa pode ser retomada.";
+      const {error:failure} = await db.from("external_research_runs").update({status:"failed",failure_code:"PIPELINE_VALIDATION_FAILED",failure_reason:failureReason,completed_at:new Date().toISOString()}).eq("id",runId).eq("worker_id",owner).neq("status","cancelled");
       if(failure) throw failure;
     }
     throw error;

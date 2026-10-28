@@ -11,6 +11,7 @@ export interface PreviewActions {
   tick: typeof Research.tickExternalResearchAction;
   resolve: typeof Research.resolveResearchEntityAction;
   cancel: typeof Research.cancelExternalResearchAction;
+  resume: typeof Research.resumeExternalResearchAction;
 }
 
 const Context = createContext<PreviewActions | null>(null);

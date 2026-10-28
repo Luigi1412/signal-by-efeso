@@ -40,7 +40,14 @@ async function tickOnce(): Promise<boolean> {
       const updated = await tickExternalCompanyResearch(candidate.workspace_id, candidate.id);
       log("tick", { runId: updated.id, status: updated.status });
     } catch (error) {
-      log("tick_error", { runId: candidate.id, message: error instanceof Error ? error.message : "unknown" });
+      const message = error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : error && typeof error === "object" && "message" in error && typeof (error as { message: unknown }).message === "string"
+            ? (error as { message: string }).message
+            : "unknown";
+      log("tick_error", { runId: candidate.id, message: message.slice(0, 240) });
     } finally {clearInterval(heartbeat);}
     return true;
   }

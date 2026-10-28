@@ -8,6 +8,7 @@ import {
   cancelExternalResearch,
   previewCompanyQuery,
   resolveAmbiguousRun,
+  resumeExternalResearch,
   startExternalCompanyResearch,
 } from "@/server/external-research/orchestrator";
 import {
@@ -170,6 +171,18 @@ export async function cancelExternalResearchAction(runId: string): Promise<{ ok:
   } catch (error) {
     if (error instanceof AccessDeniedError) return { ok: false, error: publicAccessErrorMessage(error) };
     return { ok: false, error: "Não foi possível cancelar a pesquisa." };
+  }
+}
+
+export async function resumeExternalResearchAction(runId: string): Promise<{ ok: true; run: ResearchView } | { ok: false; error: string }> {
+  try {
+    const access = await assertEfesoAccess();
+    if (!z.string().uuid().safeParse(runId).success) return { ok: false, error: "Pesquisa inválida." };
+    await resumeExternalResearch(access.workspaceId, runId, access.userId);
+    return { ok: true, run: await loadView(access.workspaceId, runId) };
+  } catch (error) {
+    if (error instanceof AccessDeniedError) return { ok: false, error: publicAccessErrorMessage(error) };
+    return { ok: false, error: "Não foi possível retomar a pesquisa." };
   }
 }
 
