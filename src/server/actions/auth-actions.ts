@@ -8,6 +8,7 @@ import { ensureDemoAccount } from "@/server/demo-bootstrap";
 import { routes } from "@/lib/routes";
 import { getAllowedEmailDomains, isEligibleAccessEmail } from "@/server/access/email-domains";
 import { getAuthorizedEmail } from "@/server/access/authorized-emails";
+import { logMagicLinkFailure, magicLinkFailureMessage } from "@/server/access/magic-link-diagnostics";
 
 function appOrigin(): string {
   const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
@@ -50,9 +51,17 @@ export async function signInWithMagicLink(input: {
         shouldCreateUser: true,
       },
     });
-    if (error) return { error: "Não foi possível enviar o link de acesso. Tente novamente." };
+    if (error) {
+      logMagicLinkFailure(error);
+      return { error: magicLinkFailureMessage(error) };
+    }
   } catch (error) {
-    return { error: publicAuthError(error) };
+    logMagicLinkFailure(error);
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("fetch") || message.includes("ECONNREFUSED") || message.includes("Failed to fetch") || message.includes("aborted")) {
+      return { error: "O serviço de acesso está indisponível. Tente novamente mais tarde." };
+    }
+    return { error: magicLinkFailureMessage(error) };
   }
 
   return {

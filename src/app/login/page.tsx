@@ -27,6 +27,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     redirect(routes.companies);
   }
   const query = await searchParams;
+  const link = Array.isArray(query.link) ? query.link[0] : query.link;
+  const linkNotice = link === "expired" ? ui.login.linkExpired : link === "rejected" || link === "missing" ? ui.login.linkRejected : null;
   const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED?.trim().toLowerCase() === "true";
   return <div className="login-page">
     <aside className="login-introduction">
@@ -41,6 +43,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">Use o e-mail autorizado para acessar seu workspace.</p>
         {!available && <p role="status" className="mt-6 border-l-2 border-brand pl-4 text-sm leading-relaxed text-muted-foreground">O serviço de acesso ainda não está disponível. Entre em contato com o administrador.</p>}
         {query.expired === "1" && <p role="status" className="mt-5 text-sm text-muted-foreground">{ui.login.sessionExpired}</p>}
+        {linkNotice && <p role="alert" className="mt-5 text-sm leading-relaxed text-conflict">{linkNotice}</p>}
         <div className="mt-8"><LoginForm available={available} googleEnabled={googleEnabled} /></div>
         <p className="mt-8 border-t pt-5 text-xs leading-relaxed text-muted-foreground">O acesso depende de autorização individual. O domínio do e-mail, por si só, não concede permissão.</p>
       </div>

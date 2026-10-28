@@ -179,6 +179,12 @@ export const ptBR = {
     demoMember: "Entrar como membro de demonstração",
     demoAdmin: "Entrar como administrador de demonstração",
     sessionExpired: "A sessão expirou. Entre novamente para continuar.",
+    magicLinkRateLimit: "O envio de e-mail está temporariamente limitado. Aguarde antes de solicitar outro link.",
+    magicLinkUnauthorized: "Este e-mail não está autorizado a receber um link de acesso.",
+    magicLinkProvider: "O provedor de e-mail não conseguiu enviar o link. Tente novamente mais tarde.",
+    magicLinkUnexpected: "Não foi possível enviar o link de acesso.",
+    linkExpired: "Este link expirou ou foi substituído. Solicite um novo link de acesso.",
+    linkRejected: "Não foi possível concluir o acesso com este link. Solicite um novo.",
   },
   accessRestricted: {
     title: "Acesso restrito",
