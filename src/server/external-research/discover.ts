@@ -4,7 +4,7 @@ import { discoverOfficialLinks } from "./official-links";
 import { hostnameOf, isSubdomainOrEqual } from "./normalize";
 import { classifySource } from "./tavily-map";
 import { getExternalResearchLimits } from "./config";
-import { dedupeSources } from "./dedup";
+import { dedupeEquivalentDocuments, dedupeSources } from "./dedup";
 import { generateResearchQueries, officialSeedUrls, seedTypeForUrl } from "./queries";
 import { splitInitialAndDeferred } from "./priority";
 import { assessSource } from "./quality";
@@ -75,7 +75,11 @@ export async function discoverCompanySources(input: {
     ),
   );
   countResearch("urlsDiscovered", assessed.length);
-  return { queries, assessed: rankSourcesForInitialPass(assessed, input.officialDomain, input.companyName).slice(0, limits.maxAcceptedSources * 3) };
+  const ranked = rankSourcesForInitialPass(assessed, input.officialDomain, input.companyName);
+  return {
+    queries,
+    assessed: dedupeEquivalentDocuments(ranked).slice(0, limits.maxAcceptedSources * 3),
+  };
 }
 
 export function selectAcceptedSources(assessed: AssessedSource[]): AssessedSource[] {

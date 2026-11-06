@@ -1,6 +1,7 @@
 import "server-only";
 import { createPipelineAdminClient } from "@/lib/supabase/pipeline-admin";
 import { assessEvidence, type AssessableClaim, type AssessableSignal, type CitedSource } from "./evidence-quality";
+import { isNumericClaimPrecise } from "./claim-precision";
 import { evaluateResearchQualityGate } from "./research-quality-gate";
 import { listSourceCandidates } from "@/server/external-research/persistence";
 import { publisherAuthorityClass } from "@/server/external-research/aggregators";
@@ -27,7 +28,12 @@ export async function loadResearchAssessment(run: ExternalResearchRunRow, propos
       return source?[{id:source.id,url:source.canonical_url,primary:source.is_primary_source,
         authoritative:["regulatory","reputable_news"].includes(publisherAuthorityClass(source.canonical_url))||["regulatory_filing","government"].includes(source.source_type),publishedAt:snapshot!.publication_date}]:[];
     });
-    const numericPrecise=c.numeric_value===null||Boolean(c.metric_name&&c.unit&&(!/currency|moeda|dollar|real/i.test(c.unit)||c.currency_code));
+    const numericPrecise = isNumericClaimPrecise({
+      numericValue: c.numeric_value,
+      metricName: c.metric_name,
+      unit: c.unit,
+      currencyCode: c.currency_code,
+    });
     return {id:c.id,statement:c.statement,category:c.claim_category,metric:c.metric_name,numericValue:c.numeric_value,unit:c.unit,currency:c.currency_code,date:c.as_of_date??c.period_end,
       precise:["supported","corroborated"].includes(c.verification_status)&&numericPrecise, sources:citedSources,excerpts:cited.map(f=>f!.excerpt)};
   });
@@ -35,8 +41,32 @@ export async function loadResearchAssessment(run: ExternalResearchRunRow, propos
   const allSignalLinks = signalLinks.length ? await read<{signal_id:string;claim_id:string;relationship_type:string}>(db.from("signal_claims").select("signal_id,claim_id,relationship_type").eq("workspace_id",run.workspace_id).in("signal_id",[...new Set(signalLinks.map(l=>l.signal_id))])) : [];
   const signals=signalLinks.length?await read<{id:string;signal_type:string}>(db.from("signals").select("id,signal_type").eq("workspace_id",run.workspace_id).eq("company_id",run.resolved_company_id).eq("status","active").in("id",[...new Set(signalLinks.map(l=>l.signal_id))])):[];
   const evidence=assessEvidence({claims:assessed,signals:[...signals.map(s=>({id:s.id,type:s.signal_type,claimIds:allSignalLinks.filter(l=>l.signal_id===s.id&&l.relationship_type!=="contextual_evidence").map(l=>l.claim_id)})),...(proposedSignal?[proposedSignal]:[])],horizonMonths:run.time_horizon_months});
+  const coverageVerdict =
+    run.resolution_payload.coverage_assessment &&
+    typeof run.resolution_payload.coverage_assessment === "object" &&
+    "verdict" in (run.resolution_payload.coverage_assessment as object)
+      ? ((run.resolution_payload.coverage_assessment as { verdict?: string }).verdict as
+          | "adequate"
+          | "research_coverage_insufficient"
+          | "public_evidence_insufficient"
+          | undefined)
+      : undefined;
+  const extractionCoverage =
+    run.resolution_payload.extraction_coverage &&
+    typeof run.resolution_payload.extraction_coverage === "object"
+      ? (run.resolution_payload.extraction_coverage as {
+          documentsAttempted?: number;
+          documentsExtracted?: number;
+          documentsTimedOut?: number;
+          documentsFailed?: number;
+          claimsExtracted?: number;
+          circuitOpened?: boolean;
+        })
+      : null;
   const gate=evaluateResearchQualityGate({...evidence,signalCount:signals.length,entityConfirmed:run.resolution_payload.entityConfirmed===true,
     runStatus:run.status,failureCode:run.failure_code,unavailableSourceCount:run.unavailable_source_count,
-    insufficientEvidenceForSignal:evidence.qualifiedSignalCount===0});
-  return {version:"evidence-v2" as const,...evidence,...gate};
+    insufficientEvidenceForSignal:evidence.qualifiedSignalCount===0,
+    coverageVerdict: coverageVerdict ?? null,
+    extractionCoverage});
+  return {version:"evidence-v2" as const,...evidence,...gate,coverageVerdict:coverageVerdict??null,extractionCoverage};
 }

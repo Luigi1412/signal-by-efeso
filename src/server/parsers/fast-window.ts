@@ -13,9 +13,58 @@ const RELEVANT =
 
 export function getFastPassWindowOptions(provider: string): FastPassWindowOptions {
   if (provider === "ollama") {
-    return { maxWindows: 2, maxCharsPerWindow: 4000, maxTotalChars: 8000 };
+    // Local 8B generation is ~5 tok/s; keep windows tight so prompt eval stays cheap.
+    return { maxWindows: 1, maxCharsPerWindow: 2200, maxTotalChars: 2200 };
   }
   return { maxWindows: 4, maxCharsPerWindow: 3500, maxTotalChars: 14000 };
+}
+
+/**
+ * Merge adjacent short PDF/HTML fragments so smashed table cells form usable sentences
+ * for the extractor without inventing text (join with spaces only).
+ */
+export function coalesceSparseBlocks(
+  blocks: ParsedContentBlock[],
+  options?: { maxPieceChars?: number; maxMergedChars?: number },
+): ParsedContentBlock[] {
+  const maxPiece = options?.maxPieceChars ?? 80;
+  const maxMerged = options?.maxMergedChars ?? 1200;
+  const eligible = blocks.filter((block) => !SKIP.has(block.blockType));
+  if (eligible.length === 0) return [];
+  const out: ParsedContentBlock[] = [];
+  let buffer: ParsedContentBlock | null = null;
+
+  const flush = () => {
+    if (buffer) out.push(buffer);
+    buffer = null;
+  };
+
+  for (const block of eligible) {
+    const text = block.textContent.trim();
+    if (!text) continue;
+    const short = text.length <= maxPiece;
+    if (short && buffer !== null && buffer.textContent.length + text.length + 1 <= maxMerged) {
+      const current: ParsedContentBlock = buffer;
+      buffer = {
+        ...current,
+        textContent: `${current.textContent} ${text}`.replace(/\s+/g, " ").trim(),
+        blockType: current.blockType === "table" || block.blockType === "table" ? "table" : "paragraph",
+      };
+      continue;
+    }
+    if (short && !buffer) {
+      buffer = { ...block, textContent: text };
+      continue;
+    }
+    flush();
+    if (short) {
+      buffer = { ...block, textContent: text };
+    } else {
+      out.push({ ...block, textContent: text });
+    }
+  }
+  flush();
+  return out;
 }
 
 /**
@@ -26,7 +75,8 @@ export function selectFastPassBlocks(
   blocks: ParsedContentBlock[],
   options: FastPassWindowOptions,
 ): ParsedContentBlock[] {
-  const eligible = blocks.filter((block) => !SKIP.has(block.blockType));
+  const coalesced = coalesceSparseBlocks(blocks);
+  const eligible = coalesced.length > 0 ? coalesced : blocks.filter((block) => !SKIP.has(block.blockType));
   if (eligible.length === 0) return [];
 
   const scored = eligible.map((block, order) => ({
@@ -62,5 +112,7 @@ function scoreBlock(block: ParsedContentBlock): number {
   if (/capacity|ramp.?up|production|produtiv|restructur|capex|supplier|supply.?chain|shutdown|acquisition|opera[cç]|capacidade|reestrutur|investimento/i.test(text)) score += 6;
   if (block.blockType === "table" || block.blockType === "list") score += 1;
   if (text.length > 80 && text.length < 2000) score += 1;
+  // Prefer blocks that already join a metric label with digits (post-coalesce tables).
+  if (/revenue|receita|ebitda|capex/i.test(text) && /\d/.test(text)) score += 5;
   return score;
 }

@@ -93,7 +93,7 @@ export const extractedClaimSchema = z.object({
 
 export const claimExtractionOutputSchema = z.object({
   schema_version: z.literal(CLAIM_EXTRACTION_SCHEMA_VERSION),
-  claims: z.array(extractedClaimSchema),
+  claims: z.array(extractedClaimSchema).max(2),
 });
 
 export type ClaimExtractionOutput = z.infer<typeof claimExtractionOutputSchema>;

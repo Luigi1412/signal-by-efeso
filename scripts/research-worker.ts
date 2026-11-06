@@ -13,6 +13,7 @@ import { tickExternalCompanyResearch } from "../src/server/external-research/orc
 import {
   listEligibleResearchRunsForWorker,
 } from "../src/server/external-research/persistence";
+import { recoverAbandonedResearchRuns } from "../src/server/external-research/stale-recovery";
 
 for (const path of [".env.local", ".env"]) if (existsSync(path)) loadEnvFile(path);
 
@@ -72,8 +73,17 @@ async function main() {
 
   while (!stopping) {
     try {
-      const {error} = await createPipelineAdminClient().from("research_worker_heartbeats").upsert({worker_id:workerId,seen_at:new Date().toISOString()});
-      if(error) throw error;
+      // Heartbeat is best-effort observability — never block tick/recovery when the table is missing.
+      const { error: heartbeatError } = await createPipelineAdminClient()
+        .from("research_worker_heartbeats")
+        .upsert({ worker_id: workerId, seen_at: new Date().toISOString() });
+      if (heartbeatError) log("heartbeat_error", { message: heartbeatError.message?.slice(0, 160) });
+
+      const abandoned = await recoverAbandonedResearchRuns({ limit: 8 });
+      for (const run of abandoned.recovered) {
+        log("abandoned_recovered", { runId: run.id, status: run.status, failure: run.failure_code });
+      }
+
       const worked = await tickOnce();
       await new Promise((resolve) => setTimeout(resolve, worked ? 250 : pollMs));
     } catch (error) {

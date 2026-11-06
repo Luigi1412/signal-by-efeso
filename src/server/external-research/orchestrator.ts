@@ -2,7 +2,7 @@ import "server-only";
 import { discoverPublicIdentity, normalizeIdentityDomain } from "./public-identity";
 import { loadResearchAssessment } from "@/server/product/research-assessment";
 import { executeOwnedPhase } from "./execution";
-import { assertResearchOwned, researchSignal, countResearch } from "./runtime";
+import { assertResearchOwned, researchSignal, countResearch, mapBounded } from "./runtime";
 import { isIntelligenceGenerationConfigured, getLanguageModelProviderName } from "@/server/ai/config";
 import { getLanguageModelProvider } from "@/server/ai/get-provider";
 import {
@@ -37,7 +37,29 @@ import {
 } from "./ingest";
 import { normalizeCompanyQuery, normalizeUrl } from "./normalize";
 import { urlSubstanceScore } from "./priority";
+import {
+  isCompensationDisclosure,
+  isDenseFinancialReport,
+  isFilingAvailabilityNotice,
+  shouldHarvestOfficialPdfs,
+} from "./source-substance";
 import { isRejectedNoiseUrl } from "./source-noise";
+import { assessResearchCoverage, coverageExpansionQueryHints } from "./coverage";
+import { extractMovementLeads, movementLeadFollowUpQueries } from "./movement-leads";
+import { assessSource } from "./quality";
+import { dedupeSources } from "./dedup";
+import {
+  DEFAULT_EXTRACTION_BUDGETS,
+  ModelCircuitBreaker,
+  classifyExtractionError,
+  rankSourcesForExtraction,
+  remainingBudgetMs,
+  summarizeExtractionCoverage,
+  type DocumentExtractionOutcome,
+  type ExtractionDocumentReport,
+} from "./extraction-control";
+import { classifyDocumentClass } from "./document-classes";
+import { runWithModelCallDeadline } from "@/server/ai/model-call-deadline";
 import {
   completeLegacyResearchRun,
   countConcurrentRuns,
@@ -631,12 +653,12 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
         snapshot_id: ingested.snapshotId,
         content_hash: null,
       });
-      // Official JS shells often leave only a title — harvest same-domain PDF links before rejecting.
+      // Official JS shells / filing notices — harvest same-domain PDF links before rejecting.
       if (document.mimeType.includes("html") && candidate?.officialDomain) {
         const html = new TextDecoder().decode(document.bytes);
         const textLen = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
-        if (textLen < 2500) {
-          for (const pdf of extractOfficialPdfLinks(html, document.finalUrl || row.url, candidate.officialDomain, 2)) {
+        if (shouldHarvestOfficialPdfs(textLen, row.canonical_url || row.url, row.title)) {
+          for (const pdf of extractOfficialPdfLinks(html, document.finalUrl || row.url, candidate.officialDomain, 3)) {
             if (!pdfQueue.includes(pdf)) pdfQueue.push(pdf);
           }
         }
@@ -658,7 +680,11 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
     const fetched = (await listSourceCandidates(run.id)).filter((row) => row.snapshot_id && row.status !== "rejected");
     for (const row of fetched) {
       const text = await getSnapshotNormalizedText(row.snapshot_id as string);
-      if (isLowYieldNormalizedText(text)) {
+      const url = row.canonical_url || row.url;
+      if (
+        isLowYieldNormalizedText(text, { url, title: row.title }) ||
+        (isFilingAvailabilityNotice(url, row.title) && text.replace(/\s+/g, " ").trim().length < 20_000)
+      ) {
         await updateSourceCandidate(row.id, { status: "rejected", rejection_reason: "thin_content" });
       }
     }
@@ -748,6 +774,166 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
   if (snapshots.length === 0) {
     return fail(run, "SOURCE_FETCH_FAILED", "Não foi possível acessar as fontes encontradas.");
   }
+
+  // --- Coverage gate + directed expansion (generic; budget-bounded) ---
+  const companyName = candidate?.canonicalName ?? run.requested_query;
+  const buildCoverageInputs = async () => {
+    const rows = await listSourceCandidates(run.id);
+    return Promise.all(
+      rows.map(async (row) => {
+        const textLen = row.snapshot_id
+          ? (await getSnapshotNormalizedText(row.snapshot_id)).length
+          : 0;
+        return {
+          url: row.canonical_url || row.url,
+          title: row.title,
+          sourceType: row.source_type,
+          sourceQuality: row.source_quality,
+          status: row.status,
+          textLen,
+          rejectionReason: row.rejection_reason,
+        };
+      }),
+    );
+  };
+  let expansionWaves = Number(run.resolution_payload.coverage_expansion_waves ?? 0) || 0;
+  let coverageSources = await buildCoverageInputs();
+  let coverage = assessResearchCoverage({
+    officialDomain: candidate?.officialDomain ?? null,
+    entityConfirmed: run.resolution_payload.entityConfirmed === true,
+    sources: coverageSources,
+    expansionWavesUsed: expansionWaves,
+    maxExpansionWaves: limits.maxCoverageExpansionWaves,
+  });
+  const movementLeads = extractMovementLeads(coverageSources, companyName);
+
+  while (coverage.shouldExpand && expansionWaves < limits.maxCoverageExpansionWaves) {
+    expansionWaves += 1;
+    const hints = [
+      ...coverageExpansionQueryHints({
+        companyName,
+        officialDomain: candidate?.officialDomain ?? null,
+        country: candidate?.headquartersCountry || run.requested_country || null,
+        assessment: coverage,
+      }),
+      ...movementLeads
+        .filter((lead) => lead.status === "open")
+        .slice(0, 3)
+        .flatMap((lead) =>
+          movementLeadFollowUpQueries(lead, companyName, candidate?.officialDomain).map((q) => ({
+            ...q,
+            classHint: "operations_capex" as const,
+          })),
+        ),
+    ].slice(0, limits.maxCoverageExpansionQueries);
+
+    const expansionFound = await mapBounded(hints, 2, async (hint) => {
+      const q = hint.site ? `site:${hint.site} ${hint.query}` : hint.query;
+      try {
+        return await provider.search({
+          query: q,
+          limit: Math.min(4, limits.maxResultsPerQuery),
+        });
+      } catch {
+        researchSignal()?.throwIfAborted();
+        return [];
+      }
+    });
+    const existing = new Set(
+      (await listSourceCandidates(run.id)).map((row) => row.normalized_url || normalizeUrl(row.url)),
+    );
+    const assessedExpansion = dedupeSources(
+      expansionFound.flat().map((row) =>
+        assessSource(
+          row,
+          candidate?.officialDomain ?? null,
+          undefined,
+          companyName,
+          run.time_horizon_months,
+        ),
+      ),
+    ).filter((row) => row.accepted && !existing.has(normalizeUrl(row.canonicalUrl || row.url)));
+
+    const rankedExpansion = assessedExpansion
+      .sort(
+        (left, right) =>
+          urlSubstanceScore(right.canonicalUrl || right.url, right.title, candidate?.officialDomain, companyName) -
+          urlSubstanceScore(left.canonicalUrl || left.url, left.title, candidate?.officialDomain, companyName),
+      )
+      .slice(0, 4);
+
+    if (rankedExpansion.length > 0) {
+      const inserted = await insertSourceCandidates(
+        rankedExpansion.map((row) => ({
+          workspaceId: run.workspace_id,
+          researchRunId: run.id,
+          url: row.url,
+          normalizedUrl: row.normalizedUrl,
+          title: row.title,
+          publisher: row.publisher,
+          sourceType: row.sourceType,
+          sourceTier: row.sourceTier,
+          sourceQuality: row.sourceQuality,
+          publishedAt: row.publishedAt,
+          status: "accepted" as const,
+          rejectionReason: null,
+          canonicalUrl: row.canonicalUrl ?? null,
+        })),
+      );
+      for (const row of inserted) await ingestRow(row);
+      await markThinFetched();
+    }
+
+    // Promote remaining deferred official/financial discovered seeds before giving up.
+    const deferredOfficial = (await listSourceCandidates(run.id))
+      .filter((row) => row.status === "discovered")
+      .sort(
+        (left, right) =>
+          urlSubstanceScore(right.canonical_url || right.url, right.title, candidate?.officialDomain, companyName) -
+          urlSubstanceScore(left.canonical_url || left.url, left.title, candidate?.officialDomain, companyName),
+      )
+      .slice(0, 4);
+    for (const row of deferredOfficial) {
+      await updateSourceCandidate(row.id, { status: "accepted" });
+      await ingestRow({ ...row, status: "accepted" });
+    }
+    await markThinFetched();
+
+    coverageSources = await buildCoverageInputs();
+    coverage = assessResearchCoverage({
+      officialDomain: candidate?.officialDomain ?? null,
+      entityConfirmed: run.resolution_payload.entityConfirmed === true,
+      sources: coverageSources,
+      expansionWavesUsed: expansionWaves,
+      maxExpansionWaves: limits.maxCoverageExpansionWaves,
+    });
+    await insertResearchEvent({
+      workspaceId: run.workspace_id,
+      researchRunId: run.id,
+      eventType: "pipeline_note",
+      payload: {
+        code: "COVERAGE_EXPANSION_WAVE",
+        wave: expansionWaves,
+        hints: hints.length,
+        verdict: coverage.verdict,
+        denseOfficial: coverage.denseOfficialCount,
+        denseFinancial: coverage.denseFinancialCount,
+        gaps: coverage.gaps,
+      },
+    });
+  }
+
+  snapshots = (await listSourceCandidates(run.id)).filter((row) => row.snapshot_id && row.status !== "rejected");
+  const latestForCoverage = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+  await updateResearchRun(run.workspace_id, run.id, {
+    resolution_payload: {
+      ...latestForCoverage.resolution_payload,
+      coverage_assessment: coverage,
+      coverage_expansion_waves: expansionWaves,
+      movement_leads: movementLeads,
+    },
+  });
+
   await insertResearchEvent({
     workspaceId: run.workspace_id,
     researchRunId: run.id,
@@ -758,6 +944,8 @@ async function phaseIngest(run: ExternalResearchRunRow): Promise<ExternalResearc
       retained: snapshots.length,
       unavailable,
       pdfFallbacks: pdfQueue.length,
+      coverageVerdict: coverage.verdict,
+      expansionWaves,
     },
   });
   if (!isIntelligenceGenerationConfigured()) {
@@ -782,33 +970,51 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
   }
   await failStaleRunningModelRuns(run.analysis_id);
   const provider = getLanguageModelProvider();
-  const limits = getExternalResearchLimits();
-  // Local models still extract from every initially accepted/fetched snapshot — capping at 1
-  // left high-value operational sources unused after discovery already paid for them.
-  const extractLimit = limits.initialAcceptedSourceLimit;
+  const budgets = DEFAULT_EXTRACTION_BUDGETS;
+  const phaseStartedAt = Date.now();
+  const phaseDeadlineAt = phaseStartedAt + budgets.phaseBudgetMs;
+  const circuit = new ModelCircuitBreaker(budgets.maxConsecutiveModelFailures);
   const companies = await listWorkspaceCompanies(run.workspace_id);
   const companyName = companies.find((row) => row.id === run.resolved_company_id)?.display_name ?? run.requested_query;
-  const candidate = candidateFromPayload(run);
-  const rows = (await listSourceCandidates(run.id))
-    .filter((row) => row.snapshot_id && row.source_id && (row.status === "fetched" || row.status === "accepted"))
-    .sort(
-      (left, right) =>
-        urlSubstanceScore(
-          right.canonical_url || right.url,
-          right.title,
-          candidate?.officialDomain ?? null,
-          companyName,
-        ) -
-        urlSubstanceScore(
-          left.canonical_url || left.url,
-          left.title,
-          candidate?.officialDomain ?? null,
-          companyName,
-        ),
-    );
-  let extracted = 0;
-  let extractionFailures = 0;
+  const failedSnapshots = new Set(
+    Array.isArray(run.resolution_payload.failed_snapshots)
+      ? (run.resolution_payload.failed_snapshots as string[])
+      : [],
+  );
+  const movementLeadUrls = new Set(
+    Array.isArray(run.resolution_payload.movement_leads)
+      ? (run.resolution_payload.movement_leads as Array<{ url?: string }>)
+          .map((lead) => lead.url)
+          .filter((url): url is string => typeof url === "string" && url.length > 0)
+      : [],
+  );
+  const fetchedRows = (await listSourceCandidates(run.id)).filter(
+    (row) => row.snapshot_id && row.source_id && (row.status === "fetched" || row.status === "accepted"),
+  );
+  const withDensity = await Promise.all(
+    fetchedRows.map(async (row) => {
+      const text = await getSnapshotNormalizedText(row.snapshot_id as string);
+      return { row, textLen: text.length, text };
+    }),
+  );
+  const textBySnapshot = new Map(withDensity.map((item) => [item.row.snapshot_id as string, item.text]));
+  const ranked = rankSourcesForExtraction(
+    withDensity.map(({ row, textLen }) => ({
+      snapshotId: row.snapshot_id as string,
+      url: row.canonical_url || row.url,
+      title: row.title,
+      sourceQuality: row.source_quality,
+      sourceType: row.source_type,
+      textLen,
+    })),
+    { movementLeadUrls },
+  );
+  const rowBySnapshot = new Map(fetchedRows.map((row) => [row.snapshot_id as string, row]));
+  const reports: ExtractionDocumentReport[] = [];
+  let extractedAttempts = 0;
   let extractionSucceeded = false;
+  let modelFailureStreakOnly = true;
+
   const extractionArgs = (row: ExternalSourceCandidateRow, blocks: Awaited<ReturnType<typeof listBlocksForSnapshot>>) => ({
     workspaceId: run.workspace_id,
     analysisId: run.analysis_id as string,
@@ -846,39 +1052,171 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
       });
     },
   });
-  for (const row of rows) {
-    const snapshotText = await getSnapshotNormalizedText(row.snapshot_id as string);
-    if (isLowYieldNormalizedText(snapshotText)) continue;
+
+  const pushReport = async (report: ExtractionDocumentReport) => {
+    reports.push(report);
+    await insertResearchEvent({
+      workspaceId: run.workspace_id,
+      researchRunId: run.id,
+      eventType: "phase_timing",
+      payload: {
+        phase: "extract_snapshot",
+        ms: report.ms,
+        snapshotId: report.snapshotId,
+        textLen: report.textLen,
+        blockCount: report.blockCount,
+        outcome: report.outcome,
+        documentClass: report.documentClass,
+        sourceQuality: report.sourceQuality,
+        url: report.url.slice(0, 160),
+        detail: report.detail ?? null,
+      },
+    });
+  };
+
+  for (const rankedItem of ranked) {
+    researchSignal()?.throwIfAborted();
+    const row = rowBySnapshot.get(rankedItem.snapshotId);
+    if (!row) continue;
+    const snapshotId = rankedItem.snapshotId;
+    const rowUrl = rankedItem.url;
+    const documentClass = classifyDocumentClass({
+      url: rowUrl,
+      title: row.title,
+      sourceType: row.source_type,
+      sourceQuality: row.source_quality,
+    });
+    const baseReport = {
+      snapshotId,
+      url: rowUrl,
+      title: row.title,
+      sourceQuality: row.source_quality,
+      documentClass,
+      textLen: rankedItem.textLen,
+      blockCount: 0,
+      modelCalls: 0,
+    };
+
+    if (failedSnapshots.has(snapshotId)) continue;
+    if (remainingBudgetMs(phaseDeadlineAt) < 3_000) {
+      await pushReport({ ...baseReport, outcome: "budget_exhausted", ms: 0, detail: "phase_budget_exhausted" });
+      continue;
+    }
+    if (circuit.isOpen) {
+      await pushReport({ ...baseReport, outcome: "circuit_open", ms: 0, detail: "model_circuit_open" });
+      continue;
+    }
+    if (extractedAttempts >= budgets.maxDocuments) {
+      await pushReport({ ...baseReport, outcome: "budget_exhausted", ms: 0, detail: "max_documents" });
+      continue;
+    }
+
+    const snapshotText = textBySnapshot.get(snapshotId) ?? (await getSnapshotNormalizedText(snapshotId));
+    if (isLowYieldNormalizedText(snapshotText, { url: rowUrl, title: row.title })) {
+      await pushReport({ ...baseReport, outcome: "skipped_low_value", ms: 0, detail: "low_yield" });
+      continue;
+    }
+
     const previous = (await getResearchRun(run.workspace_id, run.id)) ?? run;
-    const processed = Array.isArray(previous.resolution_payload.processed_snapshots) ? previous.resolution_payload.processed_snapshots as string[] : [];
-    const existing = (await listCandidatesForSnapshot(row.snapshot_id as string)).filter(
+    const processed = Array.isArray(previous.resolution_payload.processed_snapshots)
+      ? (previous.resolution_payload.processed_snapshots as string[])
+      : [];
+    const hasDenseOfficialPending = ranked.some((other) => {
+      if (other.snapshotId === snapshotId || failedSnapshots.has(other.snapshotId) || processed.includes(other.snapshotId)) {
+        return false;
+      }
+      return other.sourceQuality === "primary" && isDenseFinancialReport(other.url, other.title);
+    });
+    if (hasDenseOfficialPending && isCompensationDisclosure(rowUrl, row.title)) {
+      await pushReport({ ...baseReport, outcome: "skipped_low_value", ms: 0, detail: "deferred_for_dense_official" });
+      continue;
+    }
+
+    const existing = (await listCandidatesForSnapshot(snapshotId)).filter(
       (candidate) => candidate.analysis_id === run.analysis_id,
     );
     const pending = existing.filter((candidate) => candidate.status === "pending_validation");
-    if (processed.includes(row.snapshot_id as string) && pending.length === 0) continue;
+    if (processed.includes(snapshotId) && pending.length === 0) continue;
     if (existing.length > 0 && pending.length === 0) continue;
-    if (existing.length === 0) {
-      if (extracted >= extractLimit) continue;
-      extracted += 1;
+
+    const blocks = await listBlocksForSnapshot(snapshotId);
+    if (blocks.length === 0) {
+      await pushReport({ ...baseReport, outcome: "capture_failed", ms: 0, detail: "no_blocks" });
+      failedSnapshots.add(snapshotId);
+      continue;
     }
-    const blocks = await listBlocksForSnapshot(row.snapshot_id as string);
-    if (blocks.length === 0) continue;
+
+    extractedAttempts += 1;
+    const extractStarted = Date.now();
+    const documentBudgetMs = Math.min(budgets.documentBudgetMs, remainingBudgetMs(phaseDeadlineAt));
     try {
-      await executeControlledExtraction(extractionArgs(row, blocks));
+      await runWithModelCallDeadline(
+        documentBudgetMs,
+        async () => {
+          await executeControlledExtraction(extractionArgs(row, blocks));
+        },
+        researchSignal(),
+        "DOCUMENT_EXTRACT_DEADLINE",
+      );
       extractionSucceeded = true;
+      modelFailureStreakOnly = false;
+      circuit.recordSuccess();
       const progress = (await getResearchRun(run.workspace_id, run.id)) ?? run;
-      await updateResearchRun(run.workspace_id, run.id,{resolution_payload:{...progress.resolution_payload, processed_snapshots:[...new Set([...processed,row.snapshot_id])]}});
+      await updateResearchRun(run.workspace_id, run.id, {
+        resolution_payload: {
+          ...progress.resolution_payload,
+          processed_snapshots: [...new Set([...processed, snapshotId])],
+          failed_snapshots: [...failedSnapshots],
+        },
+      });
+      await pushReport({
+        ...baseReport,
+        blockCount: blocks.length,
+        outcome: "extracted",
+        ms: Date.now() - extractStarted,
+      });
       await persistPartialCounts(run);
       const assessment = await loadResearchAssessment((await getResearchRun(run.workspace_id, run.id)) ?? run);
       const latest = (await getResearchRun(run.workspace_id, run.id)) ?? run;
-      await updateResearchRun(run.workspace_id, run.id, {resolution_payload:{...latest.resolution_payload,
-        coverage:{sufficient:assessment.sufficient, themes:assessment.themes, gaps:assessment.gaps,
-          citedPrimarySources:assessment.primarySourceCount, recentMaterialClaims:assessment.recentMaterialClaimCount}}});
+      await updateResearchRun(run.workspace_id, run.id, {
+        resolution_payload: {
+          ...latest.resolution_payload,
+          coverage: {
+            sufficient: assessment.sufficient,
+            themes: assessment.themes,
+            gaps: assessment.gaps,
+            citedPrimarySources: assessment.primarySourceCount,
+            recentMaterialClaims: assessment.recentMaterialClaimCount,
+            retainedPrimarySources: fetchedRows.filter((item) => item.source_quality === "primary").length,
+          },
+        },
+      });
       if (assessment.sufficient) break;
-
     } catch (error) {
+      // Phase/lease/user abort must still kill the phase; document deadlines stay isolated.
       if (researchSignal()?.aborted) throw error;
-      extractionFailures += 1;
+      const outcome: DocumentExtractionOutcome = classifyExtractionError(error);
+      const detail = error instanceof Error ? error.message.slice(0, 240) : "unknown";
+      if (outcome === "timed_out" || outcome === "model_failed" || outcome === "parse_failed") {
+        circuit.recordFailure();
+      } else {
+        modelFailureStreakOnly = false;
+      }
+      failedSnapshots.add(snapshotId);
+      const progress = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+      await updateResearchRun(run.workspace_id, run.id, {
+        resolution_payload: {
+          ...progress.resolution_payload,
+          failed_snapshots: [...failedSnapshots],
+        },
+      });
+      await pushReport({
+        ...baseReport,
+        blockCount: blocks.length,
+        outcome,
+        ms: Date.now() - extractStarted,
+        detail,
+      });
       await insertResearchEvent({
         workspaceId: run.workspace_id,
         researchRunId: run.id,
@@ -886,16 +1224,18 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
         payload: {
           url: row.url,
           reason: "extraction_failed",
-          detail: error instanceof Error ? error.message.slice(0, 240) : "unknown",
+          outcome,
+          detail,
+          ms: Date.now() - extractStarted,
         },
       });
-      // Do not abandon remaining fetched sources after a model/provider failure on one snapshot.
       continue;
     }
   }
-  const claims = await listActiveMetricClaims(run.workspace_id, run.resolved_company_id);
+
+  const claimRows = await listActiveMetricClaims(run.workspace_id, run.resolved_company_id);
   const conflicts = detectPotentialClaimConflicts(
-    claims.map((claim) => ({
+    claimRows.map((claim) => ({
       id: claim.id,
       metricName: claim.metric_name,
       numericValue: claim.numeric_value,
@@ -908,18 +1248,52 @@ async function phaseClaims(run: ExternalResearchRunRow): Promise<ExternalResearc
     await markClaimsPotentialConflict([...new Set(conflicts.flatMap((item) => [item.leftId, item.rightId]))]);
   }
   await persistPartialCounts(run);
+
+  const validated = claimRows.length;
+  const extractionCoverage = summarizeExtractionCoverage(reports, {
+    claimsExtracted: claimRows.length,
+    claimsValidated: validated,
+    phaseUsedMs: Date.now() - phaseStartedAt,
+    budgets,
+    circuitOpened: circuit.isOpen,
+  });
+  extractionCoverage.documentsEligible = ranked.length;
+  const coverageLatest = (await getResearchRun(run.workspace_id, run.id)) ?? run;
+  await updateResearchRun(run.workspace_id, run.id, {
+    resolution_payload: {
+      ...coverageLatest.resolution_payload,
+      extraction_coverage: extractionCoverage,
+      failed_snapshots: [...failedSnapshots],
+    },
+  });
+  await insertResearchEvent({
+    workspaceId: run.workspace_id,
+    researchRunId: run.id,
+    eventType: "phase_timing",
+    payload: { phase: "extracting_claims_coverage", ...extractionCoverage },
+  });
+
   const remaining = (await listCandidatesForAnalysis(run.analysis_id)).filter((row) => row.status === "pending_validation");
   if (remaining.length > 0) {
     return (await getResearchRun(run.workspace_id, run.id)) ?? run;
   }
-  if (!extractionSucceeded && extractionFailures > 0) {
-    await finishPartial(
-      run,
-      getLanguageModelProviderName() === "ollama" ? "LOCAL_MODEL_UNAVAILABLE" : "OPENAI_FAILED",
-      getLanguageModelProviderName() === "ollama" ? LOCAL_MODEL_MESSAGE : OPENAI_PARTIAL_MESSAGE,
-      run.unavailable_source_count,
-    );
-    return (await getResearchRun(run.workspace_id, run.id)) ?? run;
+
+  // Progressive value: continue with whatever evidence exists unless the model is wholly unusable
+  // and nothing was attempted successfully.
+  if (!extractionSucceeded && extractedAttempts > 0 && modelFailureStreakOnly && extractionCoverage.documentsExtracted === 0) {
+    const allTimedOrModel =
+      extractionCoverage.documentsTimedOut + extractionCoverage.documentsFailed === extractionCoverage.documentsAttempted;
+    if (allTimedOrModel && circuit.isOpen && claimRows.length === 0) {
+      await finishPartial(
+        run,
+        getLanguageModelProviderName() === "ollama" ? "LOCAL_MODEL_UNAVAILABLE" : "OPENAI_FAILED",
+        getLanguageModelProviderName() === "ollama"
+          ? `${LOCAL_MODEL_MESSAGE} Extração interrompida pelo circuit breaker após falhas repetidas.`
+          : OPENAI_PARTIAL_MESSAGE,
+        run.unavailable_source_count,
+      );
+      return (await getResearchRun(run.workspace_id, run.id)) ?? run;
+    }
   }
   return (await transitionRun(run.workspace_id, run.id, "extracting_claims", { status: "generating_signals" })) ?? run;
 }
@@ -1315,6 +1689,8 @@ function publicFailureMessage(code: ResearchFailureCode): string {
       return OPENAI_PARTIAL_MESSAGE;
     case "LOCAL_MODEL_UNAVAILABLE":
       return LOCAL_MODEL_MESSAGE;
+    case "EXECUTION_ABANDONED":
+      return "A execução foi interrompida porque o worker perdeu o lease. A pesquisa não foi concluída.";
     case "OPENAI_FAILED":
       return "A geração de inteligência falhou. Tente novamente mais tarde.";
     case "NO_RELIABLE_SOURCES":

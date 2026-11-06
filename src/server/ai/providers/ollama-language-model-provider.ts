@@ -9,6 +9,12 @@ import type {
   StructuredGenerationRequest,
   StructuredGenerationSuccess,
 } from "@/server/ai/language-model-provider";
+import {
+  combineAbortSignals,
+  modelCallBudgetMs,
+  modelCallDeadlineSignal,
+  runWithModelCallDeadline,
+} from "@/server/ai/model-call-deadline";
 
 const JSON_REPAIR_ATTEMPTS = 1;
 const TRANSIENT_ATTEMPTS = 2;
@@ -54,63 +60,94 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
     if (!model) {
       throw new ModelProviderUnavailableError("OLLAMA_MODEL_NOT_CONFIGURED");
     }
-    const signal = researchSignal();
-    await acquire(signal);
-    const started = Date.now();
+    const parent = combineAbortSignals(researchSignal(), modelCallDeadlineSignal());
+    const budgetMs = Math.min(this.timeoutMs, modelCallBudgetMs() ?? this.timeoutMs);
     try {
-      const format = jsonSchemaFromZod(request.schema);
-      const schemaHint = schemaHintFromZod(request.schema);
-      let lastParseError: unknown = null;
-      for (let repair = 0; repair <= JSON_REPAIR_ATTEMPTS; repair += 1) {
-        signal?.throwIfAborted();
-        if (repair > 0) countResearch("modelRetries");
-        const response = await this.chat({
-          model,
-          instructions: request.instructions,
-          input: request.input,
-          format,
-          schemaHint,
-          repair: repair === 1 ? formatParseError(lastParseError) : null,
-        });
-        const json = extractJson(response);
-        if (!json) {
-          lastParseError = new ModelIncompleteResponseError("Ollama did not return JSON.");
-          continue;
-        }
-        const withVersion = injectSchemaVersion(json, request.schemaVersion);
-        const normalized = fillMissingNullables(withVersion, request.schema);
-        let checked = request.schema.safeParse(normalized);
-        if (!checked.success) {
-          const salvaged = dropInvalidArrayItems(normalized, checked.error);
-          const salvagedCheck = request.schema.safeParse(salvaged);
-          if (salvagedCheck.success && !emptiedArrays(normalized, salvaged)) {
-            checked = salvagedCheck;
+      return await runWithModelCallDeadline(
+        budgetMs,
+        async (deadlineSignal) => {
+          const gate = combineAbortSignals(parent, deadlineSignal);
+          await acquire(gate);
+          const started = Date.now();
+          try {
+            // Compact claim extraction/validation: format=json + prompt-embedded shape.
+            // Native JSON-schema format / pipe-joined enum hints make 8B copy invalid enums and truncate.
+            const compactClaim = request.schemaName === "claim_extraction_compact";
+            const compactValidation = request.schemaName === "claim_semantic_validation_compact";
+            const compact = compactClaim || compactValidation;
+            const format = compact ? "json" : jsonSchemaFromZod(request.schema);
+            const schemaHint = compact ? null : schemaHintFromZod(request.schema);
+            let lastParseError: unknown = null;
+            for (let repair = 0; repair <= JSON_REPAIR_ATTEMPTS; repair += 1) {
+              gate.throwIfAborted();
+              if (repair > 0) countResearch("modelRetries");
+              // Schema repair is a short second pass only — never a full-length replay.
+              const response = await this.chat({
+                model,
+                instructions: request.instructions,
+                input: request.input,
+                format,
+                schemaHint,
+                repair: repair === 1 ? formatParseError(lastParseError) : null,
+                signal: gate,
+                numPredictCap: repair === 1 ? (compactClaim ? 180 : compactValidation ? 80 : 400) : undefined,
+                compactMode: compactClaim ? "extract" : compactValidation ? "validate" : null,
+              });
+              const json = extractJson(response);
+              if (!json) {
+                lastParseError = new ModelIncompleteResponseError("Ollama did not return JSON.");
+                continue;
+              }
+              const withVersion = injectSchemaVersion(json, request.schemaVersion);
+              const normalized = fillMissingNullables(withVersion, request.schema);
+              let checked = request.schema.safeParse(normalized);
+              if (!checked.success) {
+                const salvaged = dropInvalidArrayItems(normalized, checked.error);
+                const salvagedCheck = request.schema.safeParse(salvaged);
+                if (salvagedCheck.success && !emptiedArrays(normalized, salvaged)) {
+                  checked = salvagedCheck;
+                }
+              }
+              if (!checked.success) {
+                lastParseError = checked.error;
+                continue;
+              }
+              return {
+                status: "completed",
+                parsedOutput: checked.data,
+                provider: this.name,
+                requestedModel: request.model || model,
+                actualModel: response.model ?? model,
+                providerResponseId: null,
+                inputTokens: response.inputTokens,
+                cachedInputTokens: null,
+                outputTokens: response.outputTokens,
+                latencyMs: Date.now() - started,
+                refusal: null,
+                incompleteReason: null,
+              };
+            }
+            throw lastParseError instanceof ModelIncompleteResponseError
+              ? lastParseError
+              : new ModelIncompleteResponseError(
+                  `Ollama output failed local Zod validation. ${formatParseError(lastParseError)}`,
+                );
+          } finally {
+            release();
           }
-        }
-        if (!checked.success) {
-          lastParseError = checked.error;
-          continue;
-        }
-        return {
-          status: "completed",
-          parsedOutput: checked.data,
-          provider: this.name,
-          requestedModel: request.model || model,
-          actualModel: response.model ?? model,
-          providerResponseId: null,
-          inputTokens: response.inputTokens,
-          cachedInputTokens: null,
-          outputTokens: response.outputTokens,
-          latencyMs: Date.now() - started,
-          refusal: null,
-          incompleteReason: null,
-        };
+        },
+        parent,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "");
+      // Never rewrite phase/lease/user cancellation as a soft document timeout.
+      if (/RESEARCH_PHASE_TIMEOUT|RESEARCH_ABORTED|RESEARCH_OWNERSHIP|RESEARCH_LEASE/i.test(message)) {
+        throw error;
       }
-      throw lastParseError instanceof ModelIncompleteResponseError
-        ? lastParseError
-        : new ModelIncompleteResponseError(`Ollama output failed local Zod validation. ${formatParseError(lastParseError)}`);
-    } finally {
-      release();
+      if (isTimeout(error)) {
+        throw new ModelIncompleteResponseError("Ollama request timed out.");
+      }
+      throw error;
     }
   }
 
@@ -121,6 +158,9 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
     format: Record<string, unknown> | "json";
     schemaHint: string | null;
     repair: string | null;
+    signal?: AbortSignal;
+    numPredictCap?: number;
+    compactMode?: "extract" | "validate" | null;
   }): Promise<{ content: string; inputTokens: number | null; outputTokens: number | null; model: string | null }> {
     const user = input.repair
       ? `${input.input}\n\nPrevious output failed schema validation:\n${input.repair}\nReply with a single corrected JSON object only. No markdown, no chain-of-thought. Use numbers for numeric_value, exact enum values, and the exact schema_version literal.`
@@ -128,14 +168,28 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
     const schemaBlock = input.schemaHint
       ? `\n\nRequired JSON schema:\n${input.schemaHint}\nOmit properties whose value would be null. Keep JSON compact. Do not emit markdown.`
       : "";
-    const numPredict = readPositiveInt(process.env.OLLAMA_NUM_PREDICT, input.schemaHint?.includes("validators") ? 3000 : 1800);
+    // Bound generation for local 8B (~5 tok/s): stay inside document budgets.
+    // Compact extraction: 180 tokens. Compact validation: 80 tokens (binary + reason_code).
+    // Legacy multi-validator schema still needs ~400 tokens and is timeout-prone on 8B.
+    const defaultPredict =
+      input.compactMode === "validate"
+        ? // Bench on 17ced89b pending: complete JSON at 40 tokens (~27 out); 60 keeps margin.
+          readPositiveInt(process.env.OLLAMA_VALIDATION_NUM_PREDICT, 60)
+        : input.schemaHint?.includes("validators")
+          ? 400
+          : 180;
+    const numPredict = Math.min(
+      readPositiveInt(process.env.OLLAMA_NUM_PREDICT, defaultPredict),
+      defaultPredict,
+      input.numPredictCap ?? defaultPredict,
+    );
     const systemContent = `${input.instructions}${schemaBlock}\n\nReturn only a JSON object that matches the required schema. Do not include markdown fences or chain-of-thought.`;
     const numCtx = resolveNumCtx(systemContent.length + user.length, numPredict);
     const body = JSON.stringify({
       model: input.model,
       stream: false,
       format: input.format,
-      keep_alive: process.env.OLLAMA_KEEP_ALIVE ?? "2m",
+      keep_alive: process.env.OLLAMA_KEEP_ALIVE ?? "30m",
       options: {
         temperature: 0,
         num_thread: readPositiveInt(process.env.OLLAMA_NUM_THREADS, 2),
@@ -153,37 +207,44 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
 
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= TRANSIENT_ATTEMPTS; attempt += 1) {
+      input.signal?.throwIfAborted();
       researchSignal()?.throwIfAborted();
       if (attempt > 1) countResearch("modelRetries");
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      const callMs = Math.min(this.timeoutMs, modelCallBudgetMs() ?? this.timeoutMs);
+      const timer = setTimeout(() => controller.abort(new Error("OLLAMA_CALL_DEADLINE")), callMs);
+      const signal = combineAbortSignals(controller.signal, input.signal, researchSignal());
       try {
-        const response = await abortable(this.fetchImpl(`${this.baseUrl}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body,
-          signal: researchSignal() ? AbortSignal.any([controller.signal, researchSignal()!]) : controller.signal,
-        }), researchSignal());
+        const response = await abortable(
+          this.fetchImpl(`${this.baseUrl}/api/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body,
+            signal,
+          }),
+          signal,
+        );
         if (response.status >= 500 || response.status === 429) {
           lastError = new ModelIncompleteResponseError(`Ollama chat failed (${response.status}).`);
           if (attempt >= TRANSIENT_ATTEMPTS) throw lastError;
-          await sleep(BACKOFF_MS * attempt);
+          await sleep(BACKOFF_MS * attempt, signal);
           continue;
         }
         if (!response.ok) {
           throw new ModelProviderUnavailableError(`OLLAMA_UNAVAILABLE (${response.status})`);
         }
-        const payload = (await abortable(response.json(), researchSignal() ? AbortSignal.any([controller.signal, researchSignal()!]) : controller.signal)) as {
+        const payload = (await abortable(response.json(), signal)) as {
           model?: string;
           message?: { content?: string };
           prompt_eval_count?: number;
           eval_count?: number;
-          total_duration?: number; load_duration?: number;
+          total_duration?: number;
+          load_duration?: number;
         };
-        if (typeof payload.total_duration === "number") countResearch("ollamaComputeMs",payload.total_duration/1e6);
-        if (typeof payload.load_duration === "number") countResearch("ollamaLoadMs",payload.load_duration/1e6);
-        if (typeof payload.prompt_eval_count === "number") countResearch("inputTokens",payload.prompt_eval_count);
-        if (typeof payload.eval_count === "number") countResearch("outputTokens",payload.eval_count);
+        if (typeof payload.total_duration === "number") countResearch("ollamaComputeMs", payload.total_duration / 1e6);
+        if (typeof payload.load_duration === "number") countResearch("ollamaLoadMs", payload.load_duration / 1e6);
+        if (typeof payload.prompt_eval_count === "number") countResearch("inputTokens", payload.prompt_eval_count);
+        if (typeof payload.eval_count === "number") countResearch("outputTokens", payload.eval_count);
         return {
           content: payload.message?.content ?? "",
           inputTokens: typeof payload.prompt_eval_count === "number" ? payload.prompt_eval_count : null,
@@ -192,13 +253,15 @@ export class OllamaLanguageModelProvider implements LanguageModelProvider {
         };
       } catch (error) {
         researchSignal()?.throwIfAborted();
+        input.signal?.throwIfAborted();
         if (error instanceof ModelProviderUnavailableError) throw error;
+        // Timeouts/deadlines never retry the same long call.
         if (isTimeout(error)) {
           throw new ModelIncompleteResponseError("Ollama request timed out.");
         }
         lastError = new ModelProviderUnavailableError("OLLAMA_UNAVAILABLE");
         if (attempt >= TRANSIENT_ATTEMPTS) throw lastError;
-        await sleep(BACKOFF_MS * attempt);
+        await sleep(BACKOFF_MS * attempt, signal);
       } finally {
         clearTimeout(timer);
       }
@@ -515,14 +578,17 @@ function isTimeout(error: unknown): boolean {
     name === "AbortError" ||
     name === "TimeoutError" ||
     code === "ABORT_ERR" ||
-    /aborted|timeout/i.test(message)
+    /aborted|timeout|OLLAMA_CALL_DEADLINE|DOCUMENT_EXTRACT_DEADLINE|RESEARCH_PHASE_TIMEOUT/i.test(message)
   );
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  await abortable(
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    }),
+    signal,
+  );
 }
 
 function readPositiveInt(raw: string | undefined, fallback: number): number {

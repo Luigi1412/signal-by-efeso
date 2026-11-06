@@ -119,18 +119,8 @@ export async function countUserRunsSince(workspaceId: string, userId: string, si
   return count ?? 0;
 }
 
-const WORKER_ACTIVE_STATUSES: ExternalResearchStatus[] = [
-  "queued",
-  "resolving_entity",
-  "discovering_sources",
-  "reviewing_sources",
-  "ingesting_sources",
-  "extracting_claims",
-  "generating_signals",
-  "generating_intelligence",
-  "generating_opportunities",
-  "generating_actions",
-];
+import { WORKER_ACTIVE_STATUSES } from "./stale-recovery-policy";
+export { WORKER_ACTIVE_STATUSES };
 
 /** List runs eligible for background worker ticks (lock expired or unset). */
 export async function listEligibleResearchRunsForWorker(limit = 8): Promise<ExternalResearchRunRow[]> {

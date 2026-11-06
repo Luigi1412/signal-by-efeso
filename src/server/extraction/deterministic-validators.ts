@@ -67,6 +67,8 @@ export function runDeterministicValidators(input: {
   results.push(numericConsistency(draft));
   results.push(unitCurrencyConsistency(draft));
   results.push(periodAlignment(draft));
+  results.push(factualSubstance(draft));
+  results.push(statementQuoteNumericAlignment(draft, blocksById));
 
   return results;
 }
@@ -172,6 +174,89 @@ function periodAlignment(draft: CandidateDraft): ValidationRecord {
     return record("period_alignment", "fail", "blocking", "period_end is before period_start.");
   }
   return record("period_alignment", "pass", "info", "Structural period checks passed.");
+}
+
+const HEADING_ONLY =
+  /^(destaques|divulga[cç][aã]o|resultados|earnings|highlights|overview|agenda|sum[aá]rio|summary|faqs?|governan[cç]a|hist[oó]rico|contato|contact)(\b|$)/i;
+const HAS_PREDICATE =
+  /\b(is|are|was|were|has|have|had|will|grew|growth|invest|announc|report|reach|total|amount|equal|supervis|prorrog|receb|ser[aá]|deve|foi|foram|tem|h[aá]|cresceu|investiu)\b|[%=]|R\$|USD|EUR/i;
+
+/** Reject title/heading chrome that is not a factual assertion — no LLM needed. */
+function factualSubstance(draft: CandidateDraft): ValidationRecord {
+  const statement = draft.proposedStatement.replace(/\s+/g, " ").trim();
+  if (statement.length < 24) {
+    return record("factual_substance", "fail", "blocking", "Statement is too short to be a material fact.", {
+      length: statement.length,
+    });
+  }
+  // IR chrome titles often include a period label ("3T26") — digits alone are not a predicate.
+  if (HEADING_ONLY.test(statement) && !HAS_PREDICATE.test(statement)) {
+    return record("factual_substance", "fail", "blocking", "Statement looks like a heading, not a factual claim.");
+  }
+  if (!HAS_PREDICATE.test(statement) && !/\d/.test(statement) && statement.split(/\s+/).length <= 6) {
+    return record("factual_substance", "fail", "blocking", "Statement lacks a factual predicate.");
+  }
+  return record("factual_substance", "pass", "info", "Statement has factual substance.");
+}
+
+/** Numbers asserted in the statement must appear in the exact quote or tight quote window. */
+function statementQuoteNumericAlignment(
+  draft: CandidateDraft,
+  blocksById: Map<string, CitedBlock>,
+): ValidationRecord {
+  const statementNums = extractComparableNumbers(draft.proposedStatement);
+  if (statementNums.length === 0) {
+    return record(
+      "statement_quote_numeric_alignment",
+      "pass",
+      "info",
+      "No statement numbers requiring quote alignment.",
+    );
+  }
+  const evidenceText = draft.citations
+    .map((citation) => {
+      const block = blocksById.get(citation.blockId);
+      const quote = citation.exactQuote ?? "";
+      if (!block) return quote;
+      // Keep alignment local to the citation — do not scan the entire source page.
+      const decoded = block.textContent;
+      const idx = decoded.toLowerCase().indexOf(quote.toLowerCase());
+      if (idx < 0) return quote;
+      return decoded.slice(Math.max(0, idx - 40), Math.min(decoded.length, idx + quote.length + 120));
+    })
+    .join("\n");
+  const evidenceNums = new Set(extractComparableNumbers(evidenceText));
+  const missing = statementNums.filter((value) => !evidenceNums.has(value));
+  if (missing.length > 0) {
+    return record(
+      "statement_quote_numeric_alignment",
+      "fail",
+      "blocking",
+      "Statement numbers are not present in the cited evidence.",
+      { missing },
+    );
+  }
+  return record(
+    "statement_quote_numeric_alignment",
+    "pass",
+    "info",
+    "Statement numbers appear in the cited evidence.",
+  );
+}
+
+function extractComparableNumbers(text: string): string[] {
+  const matches = text.match(/\d+(?:[.,]\d+)?/g) ?? [];
+  return [
+    ...new Set(
+      matches.map((raw) => {
+        // Normalize decimal comma; keep simple decimals comparable as strings.
+        if (/^\d+,\d+$/.test(raw)) return raw.replace(",", ".");
+        if (/^\d{1,3}(\.\d{3})+,\d+$/.test(raw)) return raw.replace(/\./g, "").replace(",", ".");
+        if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(raw)) return raw.replace(/,/g, "");
+        return raw;
+      }),
+    ),
+  ];
 }
 
 export function hasBlockingDeterministicFailure(records: ValidationRecord[]): boolean {

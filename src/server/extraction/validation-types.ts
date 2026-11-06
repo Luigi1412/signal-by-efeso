@@ -5,6 +5,8 @@ export const DETERMINISTIC_VALIDATOR_CODES = [
   "numeric_consistency",
   "unit_currency_consistency",
   "period_alignment",
+  "factual_substance",
+  "statement_quote_numeric_alignment",
 ] as const;
 
 export const SEMANTIC_VALIDATOR_CODES = [

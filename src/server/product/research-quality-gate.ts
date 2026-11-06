@@ -16,6 +16,17 @@ export interface ResearchQualityGateInput {
   failureCode?: string | null;
   unavailableSourceCount?: number;
   insufficientEvidenceForSignal?: boolean;
+  /** Pipeline coverage vs true public thinness — set by assessResearchCoverage. */
+  coverageVerdict?: "adequate" | "research_coverage_insufficient" | "public_evidence_insufficient" | null;
+  /** Claim-extraction coverage from bounded extracting_claims. */
+  extractionCoverage?: {
+    documentsAttempted?: number;
+    documentsExtracted?: number;
+    documentsTimedOut?: number;
+    documentsFailed?: number;
+    claimsExtracted?: number;
+    circuitOpened?: boolean;
+  } | null;
 }
 
 export interface ResearchQualityGateResult {
@@ -75,8 +86,26 @@ export function evaluateResearchQualityGate(input: ResearchQualityGateInput): Re
 
   if (weakBase || input.insufficientEvidenceForSignal && input.primarySourceCount === 0 && input.activeClaimCount <= 2) {
     if (input.activeClaimCount === 0) reasons.push("no_claims");
-    if (input.primarySourceCount === 0) reasons.push("no_primary_sources");
+    // Cited-by-qualified-claim primaries — distinct from retained source_quality=primary docs.
+    if (input.primarySourceCount === 0) reasons.push("no_cited_primary_source");
     if (input.recentMaterialClaimCount === 0) reasons.push("no_recent_material_claims");
+    const extraction = input.extractionCoverage;
+    if (extraction) {
+      if ((extraction.documentsTimedOut ?? 0) > 0) reasons.push("extraction_timeouts");
+      if (extraction.circuitOpened) reasons.push("extraction_circuit_open");
+      if ((extraction.documentsAttempted ?? 0) > 0 && (extraction.documentsExtracted ?? 0) === 0) {
+        reasons.push("extraction_coverage_insufficient");
+      }
+    }
+    if (input.coverageVerdict === "research_coverage_insufficient") {
+      reasons.push("research_coverage_insufficient");
+      return {
+        executionStatus: warnings ? "completed_with_warnings" : "completed",
+        researchOutcome: "research_coverage_insufficient",
+        publishFullReport: false,
+        reasons,
+      };
+    }
     return {
       executionStatus: warnings ? "completed_with_warnings" : "completed",
       researchOutcome: "insufficient_evidence",

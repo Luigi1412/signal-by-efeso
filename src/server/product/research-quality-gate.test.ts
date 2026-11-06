@@ -17,6 +17,23 @@ test("single secondary claim without primary → insufficient_evidence", () => {
   assert.equal(gate.researchOutcome, "insufficient_evidence");
   assert.equal(gate.publishFullReport, false);
   assert.equal(gate.executionStatus, "completed");
+  assert.ok(gate.reasons.includes("no_cited_primary_source"));
+});
+
+test("confirmed domain without dense official corpus → research_coverage_insufficient", () => {
+  const gate = evaluateResearchQualityGate({
+    signalCount: 0,
+    activeClaimCount: 0,
+    primarySourceCount: 0,
+    secondaryOnlyClaimCount: 0,
+    recentMaterialClaimCount: 0,
+    entityConfirmed: true,
+    runStatus: "completed",
+    insufficientEvidenceForSignal: true,
+    coverageVerdict: "research_coverage_insufficient",
+  });
+  assert.equal(gate.researchOutcome, "research_coverage_insufficient");
+  assert.ok(gate.reasons.includes("research_coverage_insufficient"));
 });
 
 test("warnings map to completed run status, not partial outcome", () => {

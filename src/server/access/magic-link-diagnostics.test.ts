@@ -55,8 +55,8 @@ test("diagnostic records drop links, tokens and secrets", () => {
   assert.equal(serialized.includes("sb_secret_"), false);
   assert.equal(serialized.includes("eyJ"), false);
   assert.equal(serialized.includes("token="), false);
-  assert.equal(record.message.includes("[url]"), true);
-  assert.equal(record.message.includes("[redacted]"), true);
+  assert.equal(String(record.message ?? "").includes("[url]"), true);
+  assert.equal(String(record.message ?? "").includes("[redacted]"), true);
   assert.equal(sanitizeAuthMessage("line\none"), "line one");
 });
 

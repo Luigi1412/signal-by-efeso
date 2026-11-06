@@ -79,7 +79,11 @@ export async function listCompanyHistory(): Promise<CompanyHistoryRow[]> {
 
     const visibleOpportunities = allowDemo ? companyOpportunities : realOpportunities;
 
-    const assessment = latestRun ? await loadResearchAssessment(latestRun) : null;
+    const terminal = latestRun
+      ? ["completed", "partial", "failed", "cancelled"].includes(latestRun.status)
+      : false;
+    // Never surface epistemological outcomes for non-terminal executions.
+    const assessment = latestRun && terminal ? await loadResearchAssessment(latestRun) : null;
     const outcome = assessment?.researchOutcome ?? null;
     rows.push({
       companyId: company.id,

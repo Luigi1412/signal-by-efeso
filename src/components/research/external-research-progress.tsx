@@ -103,7 +103,13 @@ export function ExternalResearchProgress({ initial }: { initial: ResearchView })
   return (
     <div className="grid gap-10 lg:grid-cols-[1fr_280px] lg:gap-14">
       <div>
-        <div className="eyebrow mb-3">{ui.externalResearch.eyebrow}</div>
+        <div className="eyebrow mb-3">
+          {done
+            ? "Pesquisa concluída"
+            : failed
+              ? "Pesquisa interrompida"
+              : ui.externalResearch.eyebrow}
+        </div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]">
           {done
             ? (view.outcome ? researchOutcomeMemberCopy(view.outcome).title : ui.externalResearch.completedHeadline)

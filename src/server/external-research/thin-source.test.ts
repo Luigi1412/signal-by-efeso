@@ -17,3 +17,14 @@ test("long IR chrome without financial facts is low-yield", () => {
   const body = `Skip to main content Home The Company Corporate Governance Bylaws, Codes, Policies 2024 2025 `.repeat(80);
   assert.equal(isLowYieldNormalizedText(body), true);
 });
+
+test("filing availability notices are low-yield even when long enough", () => {
+  const body = `EssilorLuxottica announces the availability of its Universal Registration Document filed with the AMF. `.repeat(40);
+  assert.equal(
+    isLowYieldNormalizedText(body, {
+      url: "https://www.essilorluxottica.com/cap/content/284372",
+      title: "2025 Universal Registration Document filed",
+    }),
+    true,
+  );
+});

@@ -347,3 +347,80 @@ test("Ollama provider does not silently call OpenAI when unavailable", async () 
   assert.ok(urls.every((url) => url.includes("127.0.0.1:11434")));
   assert.ok(!urls.some((url) => url.includes("api.openai.com")));
 });
+
+test("Ollama hard deadline aborts hung fetch and releases semaphore for the next call", async () => {
+  let aborted = false;
+  let calls = 0;
+  const provider = new OllamaLanguageModelProvider({
+    timeoutMs: 60,
+    maxConcurrent: 1,
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      if (calls === 1) {
+        return await new Promise<Response>((_resolve, reject) => {
+          const signal = (init as RequestInit | undefined)?.signal;
+          signal?.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+            },
+            { once: true },
+          );
+        });
+      }
+      return jsonResponse(200, { message: { content: '{"ok":true,"label":"second"}' } });
+    },
+  });
+  const started = Date.now();
+  await assert.rejects(() => provider.generateStructured(request()), ModelIncompleteResponseError);
+  assert.ok(Date.now() - started < 3_000);
+  assert.equal(aborted, true);
+  const second = await provider.generateStructured(request());
+  assert.equal(second.parsedOutput.label, "second");
+  assert.equal(calls, 2);
+});
+
+test("Ollama Promise.race deadline wins even when fetch ignores AbortSignal", async () => {
+  const provider = new OllamaLanguageModelProvider({
+    timeoutMs: 50,
+    fetchImpl: async () => new Promise<Response>(() => {}),
+  });
+  const started = Date.now();
+  await assert.rejects(() => provider.generateStructured(request()), /timed out|OLLAMA_CALL_DEADLINE|aborted/i);
+  assert.ok(Date.now() - started < 2_000);
+});
+
+test("Ollama timeout does not retry the same long call", async () => {
+  let calls = 0;
+  const provider = new OllamaLanguageModelProvider({
+    timeoutMs: 40,
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      return await new Promise<Response>((_resolve, reject) => {
+        (init as RequestInit | undefined)?.signal?.addEventListener(
+          "abort",
+          () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+          { once: true },
+        );
+      });
+    },
+  });
+  await assert.rejects(() => provider.generateStructured(request()), ModelIncompleteResponseError);
+  assert.equal(calls, 1);
+});
+
+test("Ollama late response after abort is discarded by the deadline race", async () => {
+  const late = { resolve: null as ((value: Response) => void) | null };
+  const provider = new OllamaLanguageModelProvider({
+    timeoutMs: 40,
+    fetchImpl: async () =>
+      new Promise<Response>((resolve) => {
+        late.resolve = resolve;
+      }),
+  });
+  await assert.rejects(() => provider.generateStructured(request()), ModelIncompleteResponseError);
+  // Settling the orphaned fetch after deadline must not surface as success.
+  late.resolve?.(jsonResponse(200, { message: { content: '{"ok":true,"label":"too-late"}' } }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+});

@@ -6,7 +6,7 @@ import { SEMANTIC_VALIDATOR_CODES, type CandidateDraft } from "./validation-type
 const FINANCIAL_FOCUS =
   /capacity|ramp.?up|production|produtiv|restructur|supply.?chain|acquisition|capex|guidance|EBITDA|receita l[ií]quida/i;
 
-export function focusTextForModel(text: string, maxChars = 3500): string {
+export function focusTextForModel(text: string, maxChars = 2200): string {
   if (text.length <= maxChars) return text;
   const match = text.search(FINANCIAL_FOCUS);
   const start = match >= 0 ? Math.max(0, match - 280) : 0;
@@ -41,10 +41,12 @@ export function serializeValidationInput(input: {
   companyName?: string | null;
   citedBlocks: SourceContentBlockRow[];
   adjacentContext?: { blockId: string; text: string }[];
+  /** Compact Ollama path: omit the long requested_checks enum list. */
+  compact?: boolean;
 }): string {
   const quote = input.candidate.citations[0]?.exactQuote ?? "";
   const block = input.citedBlocks[0];
-  return JSON.stringify({
+  const payload: Record<string, unknown> = {
     candidate_id: input.candidateId ?? null,
     statement: input.candidate.proposedStatement,
     exact_quote: quote,
@@ -63,8 +65,11 @@ export function serializeValidationInput(input: {
       unit: input.candidate.unit,
       currency_code: input.candidate.currencyCode,
     },
-    requested_checks: SEMANTIC_VALIDATOR_CODES,
-  });
+  };
+  if (!input.compact) {
+    payload.requested_checks = SEMANTIC_VALIDATOR_CODES;
+  }
+  return JSON.stringify(payload);
 }
 
 export function serializeValidationBatchInput(

@@ -15,6 +15,7 @@ import {
   researchOutcomeMemberCopy,
   type ResearchOutcome,
 } from "@/server/product/research-outcome";
+import { buildResearchLimitations } from "@/server/product/research-limitations";
 import { listResearchRunsForCompany, listSourceCandidates } from "@/server/external-research/persistence";
 import { evaluateResearchQualityGate } from "@/server/product/research-quality-gate";
 import * as workspaceRepository from "@/server/repositories/workspace-repository";
@@ -176,54 +177,6 @@ function buildReportRisks(input: {
   return [...unique.values()].slice(0, 6);
 }
 
-function buildResearchLimitations(input: {
-  outcome: ResearchOutcome;
-  outcomeBody: string;
-  sourceCount: number;
-  primarySourceCount: number;
-  noSupportedOpportunity: boolean;
-  opportunityCount: number;
-  validatedFactCount: number;
-}): ReportRiskView[] {
-  const items: ReportRiskView[] = [];
-  if (input.outcome === "insufficient_evidence" || input.outcome === "facts_only") {
-    items.push({ id: "outcome-gap", text: input.outcomeBody, severity: "high", kind: "research_limitation" });
-  }
-  if (input.primarySourceCount === 0) {
-    items.push({
-      id: "no-primary",
-      text: "Nenhuma fonte primária/oficial densa foi retida nesta execução.",
-      severity: "high",
-      kind: "research_limitation",
-    });
-  }
-  if (input.sourceCount > 0 && input.sourceCount < 4) {
-    items.push({
-      id: "thin-sources",
-      text: `Base documental estreita (${input.sourceCount} fonte(s) retida(s)).`,
-      severity: "medium",
-      kind: "research_limitation",
-    });
-  }
-  if (input.noSupportedOpportunity || input.opportunityCount === 0) {
-    items.push({
-      id: "no-opp",
-      text: "Nenhuma oportunidade EFESO foi promovida a partir das evidências atuais.",
-      severity: "medium",
-      kind: "research_limitation",
-    });
-  }
-  if (input.validatedFactCount <= 1) {
-    items.push({
-      id: "thin-facts",
-      text: "Poucos fatos materiais validados — insuficiente para leitura comercial plena.",
-      severity: "medium",
-      kind: "research_limitation",
-    });
-  }
-  return items.slice(0, 6);
-}
-
 function resolveEfesoFitState(input: {
   signalCount: number;
   fitCount: number;
@@ -316,15 +269,19 @@ export async function getCompanyBriefing(slug: string): Promise<CompanyBriefing 
   );
 
   let primarySourceCount = 0;
+  let citedPrimarySourceCount = 0;
   let retainedSourceCount = 0;
   const phaseTimings: { phase: string; ms: number }[] = [];
   if (latestRun) {
     try {
       const candidates = await listSourceCandidates(latestRun.id);
       const retained = candidates.filter(
-        (row) => row.status !== "rejected" && row.status !== "discovered" && Boolean(row.snapshot_id),
+        (row) =>
+          Boolean(row.snapshot_id) &&
+          (row.status === "fetched" || row.status === "accepted"),
       );
       retainedSourceCount = retained.length;
+      // UI / "documentos … de origem primária" uses retained source_quality — never claim-cited counts.
       primarySourceCount = retained.filter((row) => row.source_quality === "primary").length;
     } catch {
       primarySourceCount = 0;
@@ -350,7 +307,8 @@ export async function getCompanyBriefing(slug: string): Promise<CompanyBriefing 
   const opportunities = allOpportunities.filter(opportunity=>opportunity.triggerSignalId && signalIds.has(opportunity.triggerSignalId));
   const opportunityIds = new Set(opportunities.map(o=>o.id));
   const actions = allActions.filter(action=>action.opportunityId && opportunityIds.has(action.opportunityId));
-  primarySourceCount = assessment?.primarySourceCount ?? 0;
+  // Gate/assessment primary count = distinct primary sources *cited by qualified claims*.
+  citedPrimarySourceCount = assessment?.primarySourceCount ?? 0;
   const outcome = gate.researchOutcome;
   const outcomeCopy = researchOutcomeMemberCopy(outcome);
   // Keep deriveCompanyResearchOutcome reachable for tests / parity.
@@ -432,6 +390,7 @@ export async function getCompanyBriefing(slug: string): Promise<CompanyBriefing 
     outcomeBody: outcomeCopy.body,
     sourceCount,
     primarySourceCount,
+    citedPrimarySourceCount,
     noSupportedOpportunity,
     opportunityCount: showCommercial ? opportunities.length : 0,
     validatedFactCount: validatedFacts.length,

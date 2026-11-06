@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getFastPassWindowOptions, selectFastPassBlocks } from "./fast-window";
+import { coalesceSparseBlocks, getFastPassWindowOptions, selectFastPassBlocks } from "./fast-window";
 import type { ParsedContentBlock } from "./types";
 
 function block(index: number, type: ParsedContentBlock["blockType"], text: string): ParsedContentBlock {
@@ -32,8 +32,23 @@ test("fast pass prefers numeric/financial blocks and keeps full quotes", () => {
   assert.equal(kept?.textContent, quote);
 });
 
-test("ollama coverage is bounded to two short windows", () => {
+test("ollama coverage is bounded to one short window", () => {
   const options = getFastPassWindowOptions("ollama");
-  assert.equal(options.maxWindows, 2);
-  assert.ok(options.maxTotalChars <= 8000);
+  assert.equal(options.maxWindows, 1);
+  assert.ok(options.maxTotalChars <= 2200);
+});
+
+test("coalesceSparseBlocks joins smashed PDF table fragments", () => {
+  const blocks = [
+    block(0, "paragraph", "TOTAL"),
+    block(1, "paragraph", "REVENUE"),
+    block(2, "paragraph", "14,024"),
+    block(3, "paragraph", "13,290"),
+    block(4, "paragraph", "7.3%"),
+    block(5, "paragraph", "Long narrative about strategy that already exceeds the short-piece threshold and should stay alone."),
+  ];
+  const coalesced = coalesceSparseBlocks(blocks);
+  assert.ok(coalesced.some((item) => /TOTAL REVENUE 14,024/.test(item.textContent)));
+  const selected = selectFastPassBlocks(blocks, { maxWindows: 1, maxCharsPerWindow: 800, maxTotalChars: 800 });
+  assert.ok(selected.some((item) => /REVENUE/i.test(item.textContent) && /\d/.test(item.textContent)));
 });

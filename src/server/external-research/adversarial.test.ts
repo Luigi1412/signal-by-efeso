@@ -87,7 +87,7 @@ test("random blog contradicting official release stays weak", () => {
 
 test("query generation stays bounded", () => {
   const queries = generateResearchQueries({ companyName: "Suzano S.A.", officialDomain: "suzano.com.br", country: "BR" });
-  assert.ok(queries.length <= 12);
+  assert.ok(queries.length <= 14);
   assert.ok(queries.some((row) => row.site === "suzano.com.br"));
   assert.ok(queries.some((row) => /investimento|expansão|aquisição|earnings|resultados/i.test(row.query)));
   assert.ok(queries.every((row) => row.query.includes('"Suzano S.A."') || Boolean(row.site)));

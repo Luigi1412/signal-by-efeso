@@ -1,6 +1,11 @@
 import { hostnameOf, isSubdomainOrEqual } from "./normalize";
 import { isAggregatorHost } from "./aggregators";
 import { isRejectedNoiseUrl } from "./source-noise";
+import {
+  isCompensationDisclosure,
+  isDenseFinancialReport,
+  isFilingAvailabilityNotice,
+} from "./source-substance";
 import type { AssessedSource } from "./types";
 
 export type SourcePriorityBand =
@@ -36,7 +41,7 @@ const REPUTABLE_NEWS = new Set([
 
 const IR_HINT = /(?:^|\.)(?:ir|ri)\.|investor|investidores|relations-with-investors|relacoes-com-investidores/i;
 const REPORT_HINT =
-  /earnings|resultado|resultados|relat[oó]rio|annual.?report|quarter|trimestr|20-f|10-k|financial.?statement|demonstrac/i;
+  /earnings|resultado|resultados|relat[oó]rio|annual.?report|quarter|trimestr|20-f|10-k|financial.?statement|demonstrac|interim\s+financial|universal\s+registration\s+document/i;
 const OPERATIONAL_DISCLOSURE_HINT =
   /deliver(y|ies)|backlog|production|throughput|capacity|ramp[- ]?up|nivelamento|aircraft delivered/i;
 const FILING_HOST = /(?:^|\.)(?:sec\.gov|cvm\.gov\.br|b3\.com\.br|gov\.br)$/i;
@@ -64,6 +69,12 @@ export function sourcePriorityBand(source: AssessedSource, officialDomain?: stri
 
   if (isListingOrShell(source.canonicalUrl || source.url, source.title ?? "")) {
     if (official) return isNewsroom ? "official_newsroom" : "official_ir";
+  }
+  if (official && isFilingAvailabilityNotice(source.canonicalUrl || source.url, source.title)) {
+    return "official_newsroom";
+  }
+  if (official && isCompensationDisclosure(source.canonicalUrl || source.url, source.title)) {
+    return "official_ir";
   }
   if (official && (isReportType || OPERATIONAL_DISCLOSURE_HINT.test(haystack))) return "official_report";
   if (official && isIr) return "official_ir";
@@ -143,8 +154,11 @@ export function urlSubstanceScore(
   const named = mentionsCompany(hay, companyName);
   let score = 0;
   if (/\.pdf(?:$|\?)/i.test(normalizedUrl)) score += 50;
+  if (isDenseFinancialReport(normalizedUrl, title)) score += 55;
+  if (isFilingAvailabilityNotice(normalizedUrl, title)) score -= 45;
+  if (isCompensationDisclosure(normalizedUrl, title)) score -= 35;
   if (/news-post|\/noticias\/|press-release/.test(hay)) score += 40;
-  if (/resultado|earnings|2q|1q|3q|4q|quarterly|financial results/.test(hay) && !/central-de-resultados|results-center/.test(path)) {
+  if (/resultado|earnings|2q|1q|3q|4q|quarterly|financial results|interim financial/.test(hay) && !/central-de-resultados|results-center/.test(path)) {
     score += 40;
   }
   // Operational disclosures only boost when they clearly belong to this company (or its official domain).

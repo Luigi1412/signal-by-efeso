@@ -1,5 +1,7 @@
+import { isFilingAvailabilityNotice } from "./source-substance";
+
 const FINANCIAL_SIGNAL =
-  /ebitda|receita l[ií]quida|net revenue|net profit|lucro l[ií]quido|capex|guidance|operating cash|adjusted ebitda|r\$\s*\d|usd\s*\d|billion|bilh[oõ]es|million tons|toneladas|anuncia|announces|acquisition|fus[aã]o|aquisi[cç][aã]o|capacidade|investimento|expans[aã]o|fábrica|earnings|resultados|fatos relevantes|comunicado ao mercado/i;
+  /ebitda|receita l[ií]quida|net revenue|net profit|lucro l[ií]quido|capex|guidance|operating cash|adjusted ebitda|r\$\s*\d|usd\s*\d|billion|bilh[oõ]es|million tons|toneladas|(?:announces?|anuncia)\s+.{0,80}(?:revenue|receita|results?|resultados|earnings|acquisition|aquisi|capacida|investimen|expans)|acquisition|fus[aã]o|aquisi[cç][aã]o|capacidade|investimento|expans[aã]o|fábrica|earnings|resultados|fatos relevantes|comunicado ao mercado/i;
 
 const ECOMMERCE_BOILERPLATE =
   /adicionar ao carrinho|add to cart|frete grátis|calcular frete|comprar agora|buy now|parcelas? sem juros|cep de entrega|estoque esgotado|sku:|wishlist|lista de desejos/i;
@@ -16,7 +18,11 @@ export function isThinNormalizedText(text: string): boolean {
   return digits < 10;
 }
 
-export function isLowYieldNormalizedText(text: string): boolean {
+export function isLowYieldNormalizedText(
+  text: string,
+  meta?: { url?: string; title?: string | null },
+): boolean {
+  if (meta?.url && isFilingAvailabilityNotice(meta.url, meta.title)) return true;
   if (isThinNormalizedText(text)) return true;
   const compact = text.replace(/\s+/g, " ");
   if (FINANCIAL_SIGNAL.test(compact)) return false;

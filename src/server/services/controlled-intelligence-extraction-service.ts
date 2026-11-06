@@ -21,17 +21,29 @@ import {
   UnsupportedDocumentTypeError,
 } from "@/server/ai/errors";
 import type { LanguageModelProvider } from "@/server/ai/language-model-provider";
-import { CLAIM_EXTRACTION_INSTRUCTIONS } from "@/server/ai/prompts/claim-extraction-v1";
+import {
+  CLAIM_EXTRACTION_COMPACT_INSTRUCTIONS,
+  CLAIM_EXTRACTION_INSTRUCTIONS,
+} from "@/server/ai/prompts/claim-extraction-v1";
+import {
+  claimExtractionCompactOutputSchema,
+  expandCompactExtraction,
+} from "@/server/ai/schemas/claim-extraction-compact-schema";
 import {
   CLAIM_SEMANTIC_VALIDATION_BATCH_INSTRUCTIONS,
   CLAIM_SEMANTIC_VALIDATION_INSTRUCTIONS,
 } from "@/server/ai/prompts/claim-semantic-validation-v1";
+import { CLAIM_SEMANTIC_VALIDATION_COMPACT_INSTRUCTIONS } from "@/server/ai/prompts/claim-semantic-validation-compact-v1";
 import { claimExtractionOutputSchema } from "@/server/ai/schemas/claim-extraction-schema";
 import {
   claimValidationBatchOutputSchema,
   claimValidationOutputSchema,
   type ClaimValidationOutput,
 } from "@/server/ai/schemas/claim-validation-schema";
+import {
+  claimValidationCompactOutputSchema,
+  expandCompactValidation,
+} from "@/server/ai/schemas/claim-validation-compact-schema";
 import { getLanguageModelProvider } from "@/server/ai/get-provider";
 import { hasBlockingDeterministicFailure, runDeterministicValidators } from "@/server/extraction/deterministic-validators";
 import {
@@ -314,15 +326,26 @@ export async function executeControlledExtraction(input: {
           reasoningEffort: "low",
           promptVersion: CLAIM_EXTRACTION_PROMPT_VERSION,
           schemaVersion: CLAIM_EXTRACTION_SCHEMA_VERSION,
-          schema: claimExtractionOutputSchema,
-          schemaName: "claim_extraction",
-          instructions: CLAIM_EXTRACTION_INSTRUCTIONS,
+          schema:
+            getLanguageModelProviderName() === "ollama"
+              ? claimExtractionCompactOutputSchema
+              : claimExtractionOutputSchema,
+          schemaName: getLanguageModelProviderName() === "ollama" ? "claim_extraction_compact" : "claim_extraction",
+          instructions:
+            getLanguageModelProviderName() === "ollama"
+              ? CLAIM_EXTRACTION_COMPACT_INSTRUCTIONS
+              : CLAIM_EXTRACTION_INSTRUCTIONS,
           input: serializeExtractionWindow(windowRows),
         },
       });
 
+      const normalizedExtraction =
+        getLanguageModelProviderName() === "ollama"
+          ? expandCompactExtraction(extraction as never)
+          : (extraction as never);
+
       const pending: Array<{ candidate: ClaimCandidateRow; draft: CandidateDraft }> = [];
-      for (const claim of extraction.claims) {
+      for (const claim of normalizedExtraction.claims) {
         let draft: CandidateDraft;
         try {
           draft = extractedClaimToDraft(claim);
@@ -662,8 +685,10 @@ async function validateWindowCandidates(input: {
     candidateCount: semanticReady.length,
   };
 
+  // Local 8B: never batch multi-validator payloads — one compact single-claim call at a time.
+  const useCompact = getLanguageModelProviderName() === "ollama";
   let batchOk = false;
-  if (semanticReady.length > 1) {
+  if (!useCompact && semanticReady.length > 1) {
     const batchStarted = Date.now();
     try {
       const { run, parsed } = await executeStructuredModelRun({
@@ -735,7 +760,7 @@ async function validateWindowCandidates(input: {
     }
   }
 
-  if (semanticReady.length === 1 || !batchOk) {
+  if (useCompact || semanticReady.length === 1 || !batchOk) {
     for (const item of semanticReady) {
       const existing = await listValidationsForCandidate(item.candidate.id);
       if (existing.some((row) => row.validator_type === "model")) continue;
@@ -744,7 +769,8 @@ async function validateWindowCandidates(input: {
       report.fallbackCount += 1;
       report.fallbackMs.push(Date.now() - started);
       if (input.onAfterDecision) await input.onAfterDecision();
-      break;
+      // Compact path validates one candidate per call; continue through the window.
+      if (!useCompact) break;
     }
   }
 
@@ -823,6 +849,7 @@ async function runSingleSemanticValidation(input: {
   windowRows: SourceContentBlockRow[];
   companyName?: string | null;
 }): Promise<void> {
+  const useCompact = getLanguageModelProviderName() === "ollama";
   const { run, parsed } = await executeStructuredModelRun({
     workspaceId: input.workspaceId,
     analysisId: input.analysisId,
@@ -833,26 +860,33 @@ async function runSingleSemanticValidation(input: {
       source_snapshot_id: input.sourceSnapshotId,
       claim_candidate_id: input.candidate.id,
       block_ids: input.cited.map((row) => row.id),
+      compact: useCompact,
     },
     request: {
       taskType: "claim_semantic_validation",
       model: getValidationModel(),
-      reasoningEffort: "medium",
+      reasoningEffort: useCompact ? "low" : "medium",
       promptVersion: CLAIM_VALIDATION_PROMPT_VERSION,
       schemaVersion: CLAIM_VALIDATION_SCHEMA_VERSION,
-      schema: claimValidationOutputSchema,
-      schemaName: "claim_semantic_validation",
-      instructions: CLAIM_SEMANTIC_VALIDATION_INSTRUCTIONS,
+      schema: useCompact ? claimValidationCompactOutputSchema : claimValidationOutputSchema,
+      schemaName: useCompact ? "claim_semantic_validation_compact" : "claim_semantic_validation",
+      instructions: useCompact
+        ? CLAIM_SEMANTIC_VALIDATION_COMPACT_INSTRUCTIONS
+        : CLAIM_SEMANTIC_VALIDATION_INSTRUCTIONS,
       input: serializeValidationInput({
         candidate: input.draft,
         candidateId: input.candidate.id,
         companyName: input.companyName,
         citedBlocks: input.cited,
         adjacentContext: input.adjacent,
+        compact: useCompact,
       }),
     },
   });
-  const semantic = semanticOutputToRecords(parsed, run.id);
+  const full: ClaimValidationOutput = useCompact
+    ? expandCompactValidation(claimValidationCompactOutputSchema.parse(parsed))
+    : claimValidationOutputSchema.parse(parsed);
+  const semantic = semanticOutputToRecords(full, run.id);
   await insertValidations({
     workspaceId: input.workspaceId,
     claimCandidateId: input.candidate.id,

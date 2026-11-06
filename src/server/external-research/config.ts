@@ -22,11 +22,14 @@ export function allowFakeExternalResearch(): boolean {
 
 export function getExternalResearchLimits() {
   return {
-    maxQueries: readPositiveInt("EXTERNAL_RESEARCH_MAX_QUERIES", 10),
+    maxQueries: readPositiveInt("EXTERNAL_RESEARCH_MAX_QUERIES", 14),
     maxResultsPerQuery: readPositiveInt("EXTERNAL_RESEARCH_MAX_RESULTS_PER_QUERY", 6),
     maxAcceptedSources: readPositiveInt("EXTERNAL_RESEARCH_MAX_ACCEPTED_SOURCES", 24),
     initialAcceptedSourceLimit: readPositiveInt("RESEARCH_INITIAL_ACCEPTED_SOURCE_LIMIT", 6),
     enrichmentSourceLimit: readPositiveInt("RESEARCH_ENRICHMENT_SOURCE_LIMIT", 10),
+    /** Targeted coverage expansion waves after first ingest (IR/financial gaps). */
+    maxCoverageExpansionWaves: readPositiveInt("RESEARCH_COVERAGE_EXPANSION_WAVES", 2),
+    maxCoverageExpansionQueries: readPositiveInt("RESEARCH_COVERAGE_EXPANSION_QUERIES", 6),
     maxBytesPerSource: readPositiveInt("EXTERNAL_RESEARCH_MAX_BYTES_PER_SOURCE", 4 * 1024 * 1024),
     maxTotalBytes: readPositiveInt("EXTERNAL_RESEARCH_MAX_TOTAL_BYTES", 28 * 1024 * 1024),
     maxRedirects: readPositiveInt("EXTERNAL_RESEARCH_MAX_REDIRECTS", 3),

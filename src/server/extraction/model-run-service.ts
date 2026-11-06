@@ -3,6 +3,7 @@ import { assertResearchOwned, countResearch } from "@/server/external-research/r
 import type { z } from "zod";
 import type { LanguageModelProvider, StructuredGenerationRequest } from "@/server/ai/language-model-provider";
 import { ModelIncompleteResponseError, ModelRefusalError } from "@/server/ai/errors";
+import { modelCallDeadlineSignal } from "@/server/ai/model-call-deadline";
 import { sha256Json } from "@/server/extraction/sha256";
 import { completeModelRun, createRunningModelRun } from "./pipeline-persistence";
 import type { ModelRunRow } from "./pipeline-rows";
@@ -45,7 +46,9 @@ export async function executeStructuredModelRun<T extends z.ZodType>(input: {
   const modelStarted = performance.now();
   try {
     const result = await input.provider.generateStructured(input.request);
+    // Late responses after abort/deadline must not persist outputs.
     await assertResearchOwned();
+    modelCallDeadlineSignal()?.throwIfAborted();
     const completed = await completeModelRun({
       id: run.id,
       status: "completed",

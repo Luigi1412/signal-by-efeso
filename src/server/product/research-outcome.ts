@@ -9,6 +9,7 @@ export const RESEARCH_OUTCOMES = [
   "signal_found",
   "facts_only",
   "insufficient_evidence",
+  "research_coverage_insufficient",
   "no_reliable_sources",
   "analysis_partial",
   "analysis_failed",
@@ -30,6 +31,7 @@ export function deriveCompanyResearchOutcome(input: {
   recentMaterialClaimCount?: number;
   entityConfirmed?: boolean;
   unavailableSourceCount?: number;
+  coverageVerdict?: "adequate" | "research_coverage_insufficient" | "public_evidence_insufficient" | null;
 }): ResearchOutcome {
   const gate = evaluateResearchQualityGate({
     signalCount: input.signalCount,
@@ -44,6 +46,7 @@ export function deriveCompanyResearchOutcome(input: {
     failureCode: input.failureCode,
     unavailableSourceCount: input.unavailableSourceCount,
     insufficientEvidenceForSignal: input.insufficientEvidenceForSignal,
+    coverageVerdict: input.coverageVerdict ?? null,
   });
   return gate.researchOutcome;
 }
@@ -67,6 +70,11 @@ export function researchOutcomeMemberCopy(outcome: ResearchOutcome): {
       return {
         title: "Evidência insuficiente",
         body: "As informações públicas recuperadas ainda são insuficientes para uma conclusão confiável — fontes oficiais densas ou movimentos recentes materiais não foram retidos.",
+      };
+    case "research_coverage_insufficient":
+      return {
+        title: "Cobertura de pesquisa insuficiente",
+        body: "A identidade oficial foi confirmada, mas a execução não reteve uma base documental oficial densa o bastante. Isso indica falha de cobertura do mecanismo, não necessariamente ausência de evidência pública.",
       };
     case "no_reliable_sources":
       return {
@@ -104,6 +112,7 @@ export function memberResearchStatusLabel(status: string | null | undefined, out
     case "completed":
       if (outcome === "facts_only") return "Concluída — fatos sem sinal";
       if (outcome === "insufficient_evidence") return "Concluída — evidência insuficiente";
+      if (outcome === "research_coverage_insufficient") return "Concluída — cobertura insuficiente";
       if (outcome === "signal_found") return "Concluída — sinal identificado";
       return "Pesquisa concluída";
     case "partial":
